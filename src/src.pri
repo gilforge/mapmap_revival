@@ -7,7 +7,14 @@ QT += multimedia
 
 greaterThan(QT_MAJOR_VERSION, 4) {
   QT -= gui # using widgets instead gui in Qt5
-  QT += widgets webenginewidgets
+  QT += widgets
+  # webenginewidgets is heavy and not always available, use QTextBrowser on Windows
+  !win32 {
+    QT += webenginewidgets
+  }
+  win32 {
+    DEFINES += NO_WEBENGINE
+  }
 }
 
 #Includes common configuration for all subdirectory .pro files.

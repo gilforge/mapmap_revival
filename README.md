@@ -1,7 +1,11 @@
-MapMap
-====== 
+MapMap Revival (Windows)
+========================
 
-:warning: **Unfortunately, we are no longer able to maintain nor provide support for MapMap anymore. The code is provided "as is".**
+> **Fork maintenu pour Windows 11** - Version portable pour ateliers pédagogiques
+
+:warning: **Ce fork concerne uniquement Windows. Les versions Linux et macOS n'ont pas été corrigées et ne sont pas supportées.**
+
+:robot: **Ce fork a été entièrement mis à jour par l'IA Claude Code (Anthropic) sur l'initiative de @gilforge pour des travaux étudiants en arts graphiques.**
 
 MapMap is a free video mapping software.
 
@@ -19,41 +23,57 @@ previously static objects. The video is commonly combined with, or
 triggered by, audio to create an audio-visual narrative.
 
 
-Build status
----------------
-
-Github Actions: ![Build on macOS](https://github.com/mapmapteam/mapmap/workflows/Build%20on%20macOS/badge.svg) ![Build on Ubuntu](https://github.com/mapmapteam/mapmap/workflows/Build%20on%20Ubuntu/badge.svg) ![Build on Windows](https://github.com/mapmapteam/mapmap/workflows/Build%20on%20Windows/badge.svg)
-
-Travis CI: [![Build on Linux and macOS](https://travis-ci.org/mapmapteam/mapmap.svg?branch=develop)](https://travis-ci.org/mapmapteam/mapmap) [![Build on Windows](https://ci.appveyor.com/api/projects/status/5b2ww0n8m8s9p55c?svg=true)](https://ci.appveyor.com/project/baydam/mapmap)
-
-Ackowledgements
----------------
-This project was made possible by the support of the International
-Organization of La Francophonie.
-http://www.francophonie.org/
-
-Ce projet a été rendu possible grâce au support de l'Organisation
-internationale de la Francophonie.
-http://www.francophonie.org/
-
-Build and installation
-----------------------
-To build and install it, see the INSTALL file provided with the source code.
-
-To use this software on Mac OS X:
-* Install GStreamer using http://gstreamer.freedesktop.org/data/pkg/osx/1.2.4.1/gstreamer-1.0-1.2.4.1-universal.pkg : you should customize the installation and choose to install all components.
-
-To use this software on Gnu/Linux with window managers other than Unity, 
-make sure that this package is NOT installed: appmenu-qt5
-or else the menu will not show.
-
-Authors
+Version
 -------
+**0.7.0-windows** (January 2026)
+
+This is a portable version - no installation required. Just extract and run `MapMap.exe`.
+
+
+Changes from original MapMap 0.6.3
+----------------------------------
+- Fixed for Windows 11 with Qt 5.15.2 and GStreamer 1.26
+- Fixed OpenGL rendering issues (Output Editor refresh)
+- Fixed GStreamer auto-configuration (no manual PATH setup needed)
+- Fixed shape creation when video dimensions are unavailable
+- Replaced heavy QtWebEngine with lightweight QTextBrowser for shortcuts window
+- Fixed QOSC library linking for Windows
+- Portable version: works without installation
+
+
+Requirements (Windows)
+----------------------
+- Windows 10/11 64-bit
+- A graphics card with OpenGL support
+- For multi-screen output: set Windows display mode to "Extend" (Win+P)
+
+
+Build from source (Windows)
+---------------------------
+Prerequisites:
+- Qt 5.15.2 MSVC 2019 64-bit
+- Visual Studio 2019 Build Tools
+- GStreamer 1.26 MSVC 64-bit (development package)
+
+```powershell
+# Build
+powershell -ExecutionPolicy Bypass -File build.ps1
+
+# Deploy Qt DLLs
+powershell -ExecutionPolicy Bypass -File deploy.ps1
+
+# Copy GStreamer DLLs manually from your GStreamer installation
+```
+
+
+Original Authors
+----------------
 * Sofian Audry: lead developer, user interface designer, project manager.
 * Dame Diongue: developer.
 * Alexandre Quessy: release manager, developer, technical writer, project manager.
 * Mike Latona: user interface designer.
 * Vasilis Liaskovitis: developer.
+
 
 Contributors
 ------------
@@ -71,11 +91,25 @@ Contributors
 * Marc Lavallée: help with packaging.
 * Matthew Loewens : documentation, developer.
 * Madison Suniga : documentation.
+* **Gilles Aubin** (@gilforge, gilles-aubin.net) : Windows 11 revival, portable version (2026).
+
+
+Acknowledgements
+----------------
+The original MapMap project was made possible by the support of the International
+Organization of La Francophonie (http://www.francophonie.org/).
+
+:warning: **Note: This fork (mapmap_revival) is not affiliated with or supported by La Francophonie. The original project is no longer maintained.**
+
+This Windows revival fork was created for educational purposes using AI-assisted development.
+
 
 More info
 ---------
-Get more info from http://mapmap.info
+* Original project: http://mapmap.info
+* Original repository: https://github.com/mapmapteam/mapmap
+
 
 Licence
----------
+-------
 [GNU GPL v3](https://github.com/mapmapteam/mapmap/blob/develop/LICENSE)

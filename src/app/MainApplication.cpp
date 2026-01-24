@@ -39,8 +39,9 @@ MainApplication::MainApplication(int &argc, char *argv[])
   QString newPath = appDir + ";" + currentPath;
   qputenv("PATH", newPath.toLocal8Bit());
 
-  // Set settings default format
+  // Portable mode: store settings in the application directory
   QSettings::setDefaultFormat(QSettings::IniFormat);
+  QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, appDir);
 #endif
 
   // Initialize GStreamer.

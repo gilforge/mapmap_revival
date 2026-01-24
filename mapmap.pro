@@ -5,7 +5,7 @@ CONFIG += c++11
 TEMPLATE = app
 
 # Always use major.minor.micro version number format
-VERSION = 0.6.3
+VERSION = 0.7.0
 TARGET = mapmap
 
 DEFINES += UNICODE QT_THREAD_SUPPORT QT_CORE_LIB QT_GUI_LIB QT_MESSAGELOGCONTEXT

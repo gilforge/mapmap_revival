@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 
 $VS_PATH = "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 $QT_PATH = "C:\Qt\5.15.2\msvc2019_64\bin"
-$RELEASE_DIR = "z:\IA\Mapmapmap\build\release"
+$RELEASE_DIR = Join-Path $PSScriptRoot "build\release"
 
 # Create batch to run windeployqt
 $batchContent = @"

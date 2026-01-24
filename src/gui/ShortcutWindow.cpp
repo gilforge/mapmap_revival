@@ -30,7 +30,6 @@ ShortcutWindow::ShortcutWindow()
   resize(SHORTCUT_WINDOW_WIDTH, SHORTCUT_WINDOW_HEIGHT);
   // Set window title
   setWindowTitle(tr("%1 - Keyboard Shortcuts").arg(MM::APPLICATION_NAME));
-//  setGeometry();
 
   // Build HTML file to render
   QString htmlContent("<!DOCTYPE html>\n<html>\n<head>\n");
@@ -52,14 +51,16 @@ ShortcutWindow::ShortcutWindow()
 
   htmlContent.append("</body></html>");
 
+#ifdef NO_WEBENGINE
+  // Use QTextBrowser for Windows (lighter than WebEngine)
+  setHtml(htmlContent);
+  setOpenExternalLinks(true);
+#else
   // Set up web page
   QWebEnginePage *shortcutWebPage = new QWebEnginePage;
   shortcutWebPage->setHtml(htmlContent);
   // Set main page
   setPage(shortcutWebPage);
-
-  // Disable context menu
-  setContextMenuPolicy(Qt::NoContextMenu);
 
   // Create and customize font
   int sansSerif = QFontDatabase::addApplicationFont(":/base-font");
@@ -69,7 +70,10 @@ ShortcutWindow::ShortcutWindow()
   // Apply font to the document
   settings()->setFontFamily(QWebEngineSettings::SansSerifFont, sansSerifFont.family());
   settings()->setFontFamily(QWebEngineSettings::SerifFont, serifFont.family());
+#endif
 
+  // Disable context menu
+  setContextMenuPolicy(Qt::NoContextMenu);
 }
 
 }

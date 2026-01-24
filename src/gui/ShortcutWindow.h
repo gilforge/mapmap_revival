@@ -20,9 +20,14 @@
 #ifndef SHORTCUTWINDOW_H
 #define SHORTCUTWINDOW_H
 
+#ifdef NO_WEBENGINE
+#include <QTextBrowser>
+#else
 #include <QWebEngineView>
 #include <QWebEnginePage>
 #include <QWebEngineSettings>
+#endif
+
 #include <QFile>
 #include <QTextCodec>
 #include <QFontDatabase>
@@ -31,7 +36,11 @@
 
 namespace mmp {
 
+#ifdef NO_WEBENGINE
+class ShortcutWindow : public QTextBrowser
+#else
 class ShortcutWindow : public QWebEngineView
+#endif
 {
   Q_OBJECT
 public:

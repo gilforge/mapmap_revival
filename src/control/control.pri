@@ -1,5 +1,8 @@
 include(../src.pri)
 
+# Build QOSC as part of the application (not as a separate DLL)
+DEFINES += QOSC_LIBRARY
+
 HEADERS += $$PWD/ConcurrentQueue.h \
     $$PWD/OscInterface.h
 
