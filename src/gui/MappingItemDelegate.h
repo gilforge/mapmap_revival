@@ -24,6 +24,7 @@
 #include <QLineEdit>
 #include <QDebug>
 #include <QPainter>
+#include <QPainterPath>
 #include <QApplication>
 #include <QMouseEvent>
 #include <QToolTip>

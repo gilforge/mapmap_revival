@@ -51,19 +51,26 @@ macx {
 # Windows-specific:
 win32 {
   DEFINES += WIN32
-  TARGET = ../../../MapMap/MapMap # Just for release
-  GST_HOME = $$quote($$(GSTREAMER_1_0_ROOT_X86))
-  isEmpty(GST_HOME) {
-    message(\"GSTREAMER_1_0_ROOT_X86\" not detected ...)
-  }
-  else {
-    message(\"GSTREAMER_1_0_ROOT_X86\" detected in \"$${GST_HOME}\")
-  }
+  TARGET = MapMap
 
-  INCLUDEPATH += $${GST_HOME}/lib/gstreamer-1.0/include \
+  # GStreamer paths - try environment variable first, then fallback to common paths
+  GST_HOME = $$quote($$(GSTREAMER_1_0_ROOT_MSVC_X86_64))
+  isEmpty(GST_HOME) {
+    # Fallback to development installation path
+    GST_HOME = C:/gstreamer/1.0/msvc_x86_64/1.0/msvc_x86_64
+    !exists($$GST_HOME/include/gstreamer-1.0) {
+      GST_HOME = C:/gstreamer/1.0/msvc_x86_64
+      !exists($$GST_HOME/include/gstreamer-1.0) {
+        error("GStreamer not found. Please install GStreamer development package.")
+      }
+    }
+  }
+  message("GStreamer detected in: $${GST_HOME}")
+
+  INCLUDEPATH += $${GST_HOME}/include/gstreamer-1.0 \
     $${GST_HOME}/include/glib-2.0 \
     $${GST_HOME}/lib/glib-2.0/include \
-    $${GST_HOME}/include/gstreamer-1.0
+    $${GST_HOME}/include
 
   LIBS += $${GST_HOME}/lib/gstapp-1.0.lib \
     $${GST_HOME}/lib/gstbase-1.0.lib \
@@ -73,11 +80,14 @@ win32 {
     $${GST_HOME}/lib/glib-2.0.lib \
     $${GST_HOME}/lib/gstaudio-1.0.lib \
     $${GST_HOME}/lib/gstvideo-1.0.lib \
-    -lopengl32
+    opengl32.lib
 
   CONFIG -= debug
   CONFIG += release
 
   RC_FILE = resources/windows_resource.rc
   QMAKE_CXXFLAGS += -D_USE_MATH_DEFINES
+
+  # Suppress some warnings
+  QMAKE_CXXFLAGS_WARN_ON += -wd4996 -wd4267 -wd4244
 }

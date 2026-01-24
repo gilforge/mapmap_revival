@@ -383,6 +383,24 @@ void MainWindow::closeEvent(QCloseEvent *event)
   play(false);
 }
 
+void MainWindow::showEvent(QShowEvent *event)
+{
+  QMainWindow::showEvent(event);
+
+  // Fix for Windows OpenGL rendering: force a repaint after the window is shown.
+  // Without this, the Output Editor canvas may not render properly until resized.
+#ifdef Q_OS_WIN
+  QTimer::singleShot(100, this, [this]() {
+    updateCanvases();
+    // Force viewport refresh
+    if (sourceCanvas && sourceCanvas->viewport())
+      sourceCanvas->viewport()->update();
+    if (destinationCanvas && destinationCanvas->viewport())
+      destinationCanvas->viewport()->update();
+  });
+#endif
+}
+
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
 #ifdef Q_OS_OSX // On Mac OS X

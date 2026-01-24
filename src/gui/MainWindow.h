@@ -80,6 +80,7 @@ protected:
   // Events ///////////////////////////////////////////////////////////////////////////////////////////////////
   void closeEvent(QCloseEvent *event);
   void keyPressEvent(QKeyEvent *event);
+  void showEvent(QShowEvent *event);
   bool eventFilter(QObject *object, QEvent *event);
 
   void dragEnterEvent(QDragEnterEvent *event);
