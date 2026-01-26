@@ -5,7 +5,7 @@ MapMap Revival (Windows)
 
 :warning: **Ce fork concerne uniquement Windows. Les versions Linux et macOS n'ont pas été corrigées et ne sont pas supportées.**
 
-:robot: **Ce fork a été entièrement mis à jour par l'IA Claude Code (Anthropic) sur l'initiative de @gilforge pour des travaux étudiants en arts graphiques.**
+:robot: **Ce fork a été entièrement mis à jour par l'IA ![Claude](https://img.shields.io/badge/Claude-D97757?style=for-the-badge&logo=claude&logoColor=white) (Anthropic) sur l'initiative de @gilforge pour des travaux étudiants en arts graphiques.**
 
 MapMap is a free video mapping software.
 
