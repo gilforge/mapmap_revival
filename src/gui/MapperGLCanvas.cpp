@@ -67,7 +67,11 @@ MapperGLCanvas::MapperGLCanvas(MainWindow* mainWindow,
   // setAcceptDrops(true);
 
   // Render with OpenGL.
-  setViewport(new QGLWidget(QGLFormat(QGL::SampleBuffers), this, shareWidget));
+  // Enable double buffering and depth buffer alongside sample buffers
+  // to prevent flickering on Intel integrated GPUs.
+  QGLFormat glFormat(QGL::SampleBuffers | QGL::DoubleBuffer | QGL::DepthBuffer);
+  glFormat.setSwapInterval(1); // Enable VSync to prevent tearing
+  setViewport(new QGLWidget(glFormat, this, shareWidget));
   setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
 
   // TODO: do we need to delete scene (or call new QGraphicsScene(this)?)

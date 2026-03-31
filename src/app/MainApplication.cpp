@@ -21,11 +21,19 @@
 
 #include "MainApplication.h"
 
+#include <QSurfaceFormat>
+
 namespace mmp {
 
 MainApplication::MainApplication(int &argc, char *argv[])
   : QApplication(argc, argv)
 {
+  // Set default OpenGL surface format with VSync enabled.
+  // This helps prevent flickering on Intel integrated GPUs.
+  QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+  format.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+  format.setSwapInterval(1); // VSync on
+  QSurfaceFormat::setDefaultFormat(format);
 #ifdef Q_OS_WIN32
   // Set GStreamer plugins path on Windows
   QString appDir = QCoreApplication::applicationDirPath();

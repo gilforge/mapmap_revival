@@ -308,6 +308,11 @@ void TextureGraphicsItem::_postPaint(QPainter* painter,
 
   glDisable(GL_TEXTURE_2D);
 
+  // Ensure all GL commands are completed before returning to QPainter mode.
+  // This prevents flickering and missing control points on Intel integrated GPUs
+  // where the driver may not synchronize GL and QPainter rendering properly.
+  glFinish();
+
   painter->endNativePainting();
 }
 
