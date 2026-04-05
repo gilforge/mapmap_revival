@@ -88,7 +88,7 @@ void ConsoleWindow::writeLogFile(const QString &message)
   QFile logFile(logFilePath);
   logFile.open(QIODevice::Append);
   QTextStream stream(&logFile);
-  stream << message << endl;
+  stream << message << Qt::endl;
 }
 
 void ConsoleWindow::printMessage(QtMsgType type, const QMessageLogContext &context, const QString &msg)
@@ -130,7 +130,7 @@ void ConsoleWindow::printMessage(QtMsgType type, const QMessageLogContext &conte
   _console->appendHtml(output);
 
   // Write also on log file
-  writeLogFile(output.remove(QRegExp("<[^>]*>")));
+  writeLogFile(output.remove(QRegularExpression("<[^>]*>")));
 }
 
 void ConsoleWindow::closeEvent(QCloseEvent *event)

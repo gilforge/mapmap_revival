@@ -24,6 +24,8 @@
 #include "VideoImpl.h"
 #include <cstring>
 #include <iostream>
+#include <QElapsedTimer>
+#include <QThread>
 
 namespace mmp {
 
@@ -35,7 +37,7 @@ bool VideoImpl::hasVideoSupport()
   if (! did_print_gst_version)
   {
     qDebug() << "Using GStreamer version " <<
-      GST_VERSION_MAJOR << "." << GST_VERSION_MINOR << "." << GST_VERSION_MICRO << endl;
+      GST_VERSION_MAJOR << "." << GST_VERSION_MINOR << "." << GST_VERSION_MICRO << Qt::endl;
     did_print_gst_version = true;
   }
   // TODO: actually check if we have it
@@ -74,7 +76,7 @@ void VideoImpl::setRate(double rate)
 {
   if (rate == 0.0)
   {
-    qDebug() << "Cannot set rate to zero, ignoring rate " << rate << endl;
+    qDebug() << "Cannot set rate to zero, ignoring rate " << rate << Qt::endl;
     return;
   }
 
@@ -103,7 +105,7 @@ void VideoImpl::setVolume(double volume)
       g_object_set (_audiovolume0, "volume", _volume, NULL);
     }
     else
-      qWarning() << "Cannot change volume cause this video does not support audio." << endl;
+      qWarning() << "Cannot change volume cause this video does not support audio." << Qt::endl;
   }
 }
 
@@ -225,7 +227,8 @@ _movieReady(false),
 _playState(false),
 _uri("")
 {
-  _mutexLocker = new QMutexLocker(&_mutex);
+  _mutexLocker = new QMutexLocker<QMutex>(&_mutex);
+  _mutexLocker->unlock(); // Start unlocked; lockMutex()/unlockMutex() manage locking explicitly.
 
   QSettings settings;
   _playInLoop = settings.value("playInLoop", MM::PLAY_IN_LOOP).toBool();
@@ -274,7 +277,7 @@ void VideoImpl::freeResources()
   _freeElement(&_audiovolume0);
   _freeElement(&_audiosink0);
 
-  qDebug() << "Freeing remaining samples/buffers" << endl;
+  qDebug() << "Freeing remaining samples/buffers" << Qt::endl;
 
   // Frees current sample and buffer.
   _freeCurrentSample();
@@ -294,20 +297,20 @@ void VideoImpl::resetMovie()
     if (_rate > 0.0)
     {
       seekTo((guint64) 0);
-      qWarning() << "update Rate" << endl;
+      qWarning() << "update Rate" << Qt::endl;
       _updateRate();
     }
     else
     {
       // NOTE: Untested.
       seekTo(_duration);
-      qWarning() << "update Rate" << endl;
+      qWarning() << "update Rate" << Qt::endl;
       _updateRate();
     }
   }
   else
   {
-    qDebug() << "Seeking not enabled: reloading the movie" << endl;
+    qDebug() << "Seeking not enabled: reloading the movie" << Qt::endl;
     loadMovie(_uri);
   }
 }
@@ -328,7 +331,7 @@ bool VideoImpl::createVideoComponents()
   // Verify that they were created.
   if (!_queue0 || !_videoconvert0 || ! _videoscale0 || ! _capsfilter0 || !_appsink0)
   {
-    qWarning() << "Not all video elements could be created." << endl;
+    qWarning() << "Not all video elements could be created." << Qt::endl;
     if (! _pipeline) g_printerr("_pipeline");
     if (! _queue0) g_printerr("_queue0");
     if (! _videoconvert0) g_printerr("_videoconvert0");
@@ -346,7 +349,7 @@ bool VideoImpl::createVideoComponents()
   // Link.
   if (! gst_element_link_many (_queue0, _videoconvert0, _capsfilter0, _videoscale0, _appsink0, NULL))
   {
-    qWarning() << "Could not link video queue, colorspace converter, caps filter, scaler and app sink." << endl;
+    qWarning() << "Could not link video queue, colorspace converter, caps filter, scaler and app sink." << Qt::endl;
     return false;
   }
 
@@ -382,7 +385,7 @@ bool VideoImpl::createAudioComponents()
   // Verify that they were created.
   if (!_audioqueue0 || !_audioconvert0 || !_audioresample0 || !_audiovolume0 || !_audiosink0)
   {
-    qDebug() << "Not all audio elements could be created." << endl;
+    qDebug() << "Not all audio elements could be created." << Qt::endl;
     if (! _audioqueue0) g_printerr("_audioqueue0");
     if (! _audioconvert0) g_printerr("_audioconvert0");
     if (! _audioresample0) g_printerr("_audioresample0");
@@ -400,7 +403,7 @@ bool VideoImpl::createAudioComponents()
   if (! gst_element_link_many (_audioqueue0, _audioconvert0, _audioresample0,
                                _audiovolume0, _audiosink0, NULL))
   {
-    qDebug() << "Could not link audio queue, converter, resampler and audio sink." << endl;
+    qDebug() << "Could not link audio queue, converter, resampler and audio sink." << Qt::endl;
     return false;
   }
 
@@ -454,7 +457,7 @@ void VideoImpl::update()
    const gchar* filetestpath = (const gchar*) filename.toUtf8().constData();
    if (FALSE == g_file_test(filetestpath, G_FILE_TEST_EXISTS))
    {
-     qDebug() << "File " << filename << " does not exist" << endl;
+     qDebug() << "File " << filename << " does not exist" << Qt::endl;
      return false;
    }
 
@@ -474,7 +477,7 @@ void VideoImpl::update()
    _pipeline = gst_pipeline_new ( "video-source-pipeline" );
    if (!_pipeline)
    {
-     qWarning() << "Pipeline could not be created." << endl;
+     qWarning() << "Pipeline could not be created." << Qt::endl;
      unloadMovie();
      return (-1);
    }
@@ -482,7 +485,7 @@ void VideoImpl::update()
    // Create and link video components.
    if (!createVideoComponents())
    {
-     qWarning() << "Video components could not be initialized." << endl;
+     qWarning() << "Video components could not be initialized." << Qt::endl;
      unloadMovie();
      return (-1);
    }
@@ -511,7 +514,7 @@ bool VideoImpl::setPlayState(bool play)
 //  GstStateChangeReturn ret = gst_element_get_state (_pipeline, NULL, NULL, -1);
   if (ret == GST_STATE_CHANGE_FAILURE)
   {
-    qDebug() << "Unable to set the pipeline to the playing state." << endl;
+    qDebug() << "Unable to set the pipeline to the playing state." << Qt::endl;
     //unloadMovie(); // <-- calling this created an infinite recursion
     return false;
   }
@@ -527,7 +530,7 @@ bool VideoImpl::seekTo(double position)
   gint64 duration;
   if (!gst_element_query_duration (_pipeline, GST_FORMAT_TIME, &duration))
   {
-    qDebug() << "Cannot get duration of file" << endl;
+    qDebug() << "Cannot get duration of file" << Qt::endl;
     return false;
   }
 
@@ -603,8 +606,8 @@ void VideoImpl::_checkMessages()
         // Error ////////////////////////////////////////////////
         case GST_MESSAGE_ERROR:
           gst_message_parse_error(msg, &err, &debug_info);
-          qWarning() << "Error received from element " << GST_OBJECT_NAME (msg->src) << ": " << err->message << endl;
-          qDebug() << "Debugging information: " << (debug_info ? debug_info : "none") << "." << endl;
+          qWarning() << "Error received from element " << GST_OBJECT_NAME (msg->src) << ": " << err->message << Qt::endl;
+          qDebug() << "Debugging information: " << (debug_info ? debug_info : "none") << "." << Qt::endl;
           g_clear_error(&err);
           g_free(debug_info);
 
@@ -643,24 +646,24 @@ void VideoImpl::_checkMessages()
             if (_seekEnabled)
             {
 #ifdef VIDEO_IMPL_VERBOSE
-              qDebug() << "Seeking is ENABLED from " << start << " to " << end << "." << endl;
+              qDebug() << "Seeking is ENABLED from " << start << " to " << end << "." << Qt::endl;
 #endif
             }
             else
             {
-              qDebug() << "Seeking is DISABLED for this stream." << endl;
+              qDebug() << "Seeking is DISABLED for this stream." << Qt::endl;
             }
           }
           else
           {
-            qWarning() << "Seeking query failed." << endl;
+            qWarning() << "Seeking query failed." << Qt::endl;
           }
 
           gst_query_unref (query);
 
           // Movie is ready!
 #ifdef VIDEO_IMPL_VERBOSE
-          qDebug() << "Preroll done: movie is ready." << endl;
+          qDebug() << "Preroll done: movie is ready." << Qt::endl;
 #endif // ifdef
           _setMovieReady(true);
         }
@@ -676,14 +679,14 @@ void VideoImpl::_checkMessages()
 #ifdef VIDEO_IMPL_VERBOSE
           qDebug() << "Pipeline state for movie " << _uri
                    << " changed from " << gst_element_state_get_name(oldState)
-                   << " to " << gst_element_state_get_name(newState) << endl;
+                   << " to " << gst_element_state_get_name(newState) << Qt::endl;
 #endif
         }
         break;
 
       default:
         // We should not reach here.
-        qWarning() << "Unexpected message received." << endl;
+        qWarning() << "Unexpected message received." << Qt::endl;
         break;
       }
       gst_message_unref(msg);
@@ -707,25 +710,25 @@ void  VideoImpl::_updateRate()
   // Check different things.
   if (_pipeline == NULL)
   {
-    qWarning() << "Cannot set rate: no pipeline!" << endl;
+    qWarning() << "Cannot set rate: no pipeline!" << Qt::endl;
     return;
   }
 
   if (!_seekEnabled)
   {
-    qWarning() << "Cannot set rate: seek not working" << endl;
+    qWarning() << "Cannot set rate: seek not working" << Qt::endl;
     return;
   }
 
   if (!_isMovieReady())
   {
-    qWarning() << "Movie is not yet ready to play, cannot seek yet." << endl;
+    qWarning() << "Movie is not yet ready to play, cannot seek yet." << Qt::endl;
   }
 
   // Obtain the current position, needed for the seek event.
   gint64 position;
   if (!gst_element_query_position (_pipeline, GST_FORMAT_TIME, &position)) {
-    qWarning() << "Unable to retrieve current position." << endl;
+    qWarning() << "Unable to retrieve current position." << Qt::endl;
     return;
   }
 
@@ -750,10 +753,10 @@ void  VideoImpl::_updateRate()
 
   // Send the event.
   if (!gst_element_send_event (_appsink0, seekEvent)) {
-    qWarning() << "Cannot perform seek event" << endl;
+    qWarning() << "Cannot perform seek event" << Qt::endl;
   }
 
-  qDebug() << "Current rate: " << _rate << "." << endl;
+  qDebug() << "Current rate: " << _rate << "." << Qt::endl;
 }
 
 void VideoImpl::_freeCurrentSample() {
@@ -792,7 +795,7 @@ void VideoImpl::unlockMutex()
 
 bool VideoImpl::waitForNextBits(int timeout, const uchar** bits)
 {
-  QTime time;
+  QElapsedTimer time;
   time.start();
   while (time.elapsed() < timeout)
   {
@@ -803,6 +806,11 @@ bool VideoImpl::waitForNextBits(int timeout, const uchar** bits)
         *bits = getBits();
       return true;
     }
+    // Yield CPU to allow GStreamer callbacks to deliver frames.
+    // NOTE: Do NOT call QCoreApplication::processEvents() here!
+    // It would cause re-entrant repainting during project loading,
+    // crashing on partially-initialized mappings.
+    QThread::msleep(10);
   }
 
   // Timed out.

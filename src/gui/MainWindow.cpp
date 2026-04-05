@@ -452,7 +452,7 @@ void MainWindow::dragEnterEvent(QDragEnterEvent *event)
   bool allowDrag = true;
 
   if (mimeData->hasUrls()) {
-    foreach (QUrl url, mimeData->urls()) {
+    for (const QUrl &url : mimeData->urls()) {
       QString fileName = url.toLocalFile();
       // Don't allow drag if file is not supported
       if (!fileSupported(fileName, MM::FILE_EXTENSION) &&
@@ -483,7 +483,7 @@ void MainWindow::dropEvent(QDropEvent *event)
 
   if (mimeData->hasUrls()) {
     // In case that dragged many files
-    foreach (QUrl url, mimeData->urls()) {
+    for (const QUrl &url : mimeData->urls()) {
       QString fileName = url.toLocalFile();
 
       if (!fileName.isEmpty()) {
@@ -537,12 +537,15 @@ void MainWindow::newFile()
 
 void MainWindow::open()
 {
+  qDebug() << "[open] START";
   // Stop video playback to avoid lags. XXX Hack
   pause(false);
 
+  qDebug() << "[open] paused, calling okToContinue()...";
   // Popup dialog allowing the user to save before opening a new file.
   if (okToContinue())
   {
+    qDebug() << "[open] okToContinue=true, opening file dialog...";
 // Temporary fix of QFileDialog on GTK
 #ifdef Q_OS_LINUX
     QString fileName = QFileDialog::getOpenFileName(this,
@@ -656,17 +659,17 @@ void MainWindow::openCameraDevice()
   pause(!pauseAction->isVisible());
 
   QString device;
-  QList<QCameraInfo> cameras = QCameraInfo::availableCameras();
+  QList<QCameraDevice> cameras = QMediaDevices::videoInputs();
 
   if (cameras.count() > 1)
   {
     QStringList devicesList;
     QMap<QString, QString> devices;
 
-    for (const QCameraInfo &cameraInfo: cameras)
+    for (const QCameraDevice &cameraInfo: cameras)
     {
       devicesList << cameraInfo.description();
-      devices.insert(cameraInfo.description(), cameraInfo.deviceName());
+      devices.insert(cameraInfo.description(), QString::fromUtf8(cameraInfo.id()));
     }
 
     bool ok;
@@ -683,14 +686,15 @@ void MainWindow::openCameraDevice()
 
   else
   {
-    if (QCameraInfo::defaultCamera().isNull())
+    QCameraDevice defaultCam = QMediaDevices::defaultVideoInput();
+    if (defaultCam.isNull())
     {
       QMessageBox::warning(this, tr("No camera available"), tr("You can not use this feature!\nNo camera available in your system"));
 
     }
     else
     {
-      device = QCameraInfo::defaultCamera().deviceName();
+      device = QString::fromUtf8(defaultCam.id());
     }
   }
 
@@ -906,7 +910,7 @@ void MainWindow::deleteItem()
     }
     else
     {
-      qCritical() << "Selected item neither a mapping nor a paint." << endl;
+      qCritical() << "Selected item neither a mapping nor a paint." << Qt::endl;
     }
   }
 }
@@ -919,7 +923,7 @@ void MainWindow::duplicateMappingItem()
   }
   else
   {
-    qCritical() << "No selected mapping" << endl;
+    qCritical() << "No selected mapping" << Qt::endl;
   }
 }
 
@@ -931,7 +935,7 @@ void MainWindow::deleteMappingItem()
   }
   else
   {
-    qCritical() << "No selected mapping" << endl;
+    qCritical() << "No selected mapping" << Qt::endl;
   }
 }
 
@@ -1053,7 +1057,7 @@ void MainWindow::deletePaintItem()
   }
   else
   {
-    qCritical() << "No selected source" << endl;
+    qCritical() << "No selected source" << Qt::endl;
   }
 }
 
@@ -1125,42 +1129,57 @@ void MainWindow::openRecentVideo()
 
 bool MainWindow::clearProject()
 {
+  qDebug() << "[clearProject] START";
   // Disconnect signals to avoid problems when clearning mappingList and paintList.
   disconnectProjectWidgets();
+  qDebug() << "[clearProject] disconnectProjectWidgets done";
 
   // Clear current paint / mapping.
   removeCurrentPaint();
+  qDebug() << "[clearProject] removeCurrentPaint done";
   removeCurrentMapping();
+  qDebug() << "[clearProject] removeCurrentMapping done";
 
   // Empty list widgets.
   mappingListModel->clear();
+  qDebug() << "[clearProject] mappingListModel cleared";
   paintList->clear();
+  qDebug() << "[clearProject] paintList cleared";
 
   // Clear property panel.
   for (int i=mappingPropertyPanel->count()-1; i>=0; i--)
     mappingPropertyPanel->removeWidget(mappingPropertyPanel->widget(i));
+  qDebug() << "[clearProject] property panel cleared";
 
   // Disable property panel.
   mappingPropertyPanel->setDisabled(true);
 
   // Clear list of mappers.
   mappers.clear();
+  qDebug() << "[clearProject] mappers cleared";
 
   // Clear list of paint guis.
   paintGuis.clear();
+  qDebug() << "[clearProject] paintGuis cleared";
 
   // Clear model.
   mappingManager->clearAll();
+  qDebug() << "[clearProject] mappingManager cleared";
 
   // Refresh GL canvases to clear them out.
+  qDebug() << "[clearProject] about to repaint sourceCanvas...";
   sourceCanvas->repaint();
+  qDebug() << "[clearProject] sourceCanvas repainted, about to repaint destinationCanvas...";
   destinationCanvas->repaint();
+  qDebug() << "[clearProject] destinationCanvas repainted";
 
   // Reconnect everything.
   connectProjectWidgets();
+  qDebug() << "[clearProject] connectProjectWidgets done";
 
   // Window was modified.
   windowModified();
+  qDebug() << "[clearProject] DONE";
 
   return true;
 }
@@ -1241,7 +1260,7 @@ uid MainWindow::createMeshTextureMapping(uid mappingId,
   {
     Paint::ptr paint = mappingManager->getPaintById(paintId);
     int nVertices = nColumns * nRows;
-    qDebug() << nVertices << " vs " << nColumns << "x" << nRows << " vs " << src.size() << " " << dst.size() << endl;
+    qDebug() << nVertices << " vs " << nColumns << "x" << nRows << " vs " << src.size() << " " << dst.size() << Qt::endl;
     Q_ASSERT(src.size() == nVertices && dst.size() == nVertices);
 
     MShape::ptr inputMesh( new Mesh(src, nColumns, nRows));
@@ -1414,7 +1433,7 @@ void MainWindow::setMappingVisible(uid mappingId, bool visible)
 
   if (mapping.isNull())
   {
-    qDebug() << "No such mapping id" << endl;
+    qDebug() << "No such mapping id" << Qt::endl;
   }
   else
   {
@@ -1495,8 +1514,10 @@ void MainWindow::deletePaint(uid paintId, bool replace)
   if (Paint::getUidAllocator().exists(paintId))
   {
     if (replace == false) {
+      Paint::ptr paint = mappingManager->getPaintById(paintId);
+      QString paintName = paint ? paint->getName() : tr("Unknown");
       int r = QMessageBox::warning(this, tr("MapMap"),
-                                   tr("Remove this source and all its associated layers?"),
+                                   tr("Remove \"%1\" and all its associated layers?").arg(paintName),
                                    QMessageBox::Ok | QMessageBox::Cancel);
       if (r == QMessageBox::Ok)
       {
@@ -1578,7 +1599,7 @@ void MainWindow::createLayout()
   sourceLayout->addWidget(sourceCanvasToolbar, 0, Qt::AlignRight);
   sourcePanel->setLayout(sourceLayout);
 
-  destinationCanvas = new MapperGLCanvas(this, true, nullptr, static_cast<QGLWidget*>(sourceCanvas->viewport()));
+  destinationCanvas = new MapperGLCanvas(this, true, nullptr);
   destinationCanvas->setFocusPolicy(Qt::ClickFocus);
   destinationCanvas->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   destinationCanvas->setMinimumSize(CANVAS_MINIMUM_WIDTH, CANVAS_MINIMUM_HEIGHT);
@@ -1738,7 +1759,7 @@ void MainWindow::createActions()
 
   // Import Media.
   importMediaAction = new QAction(tr("&Import Media File..."), this);
-  importMediaAction->setShortcut(Qt::CTRL + Qt::Key_I);
+  importMediaAction->setShortcut(Qt::CTRL | Qt::Key_I);
   importMediaAction->setIcon(QIcon(":/add-video"));
   importMediaAction->setToolTip(tr("Import a video or image file..."));
   importMediaAction->setIconVisibleInMenu(false);
@@ -1748,7 +1769,7 @@ void MainWindow::createActions()
 
   // Open camera.
   AddCameraAction = new QAction(tr("Open &Camera Device..."), this);
-  AddCameraAction->setShortcut(Qt::CTRL + Qt::SHIFT + Qt::Key_C);
+  AddCameraAction->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_C);
   AddCameraAction->setIcon(QIcon(":/add-camera"));
   AddCameraAction->setIconVisibleInMenu(false);
   AddCameraAction->setToolTip(tr("Choose your camera device..."));
@@ -1758,7 +1779,7 @@ void MainWindow::createActions()
 
   // Add color.
   addColorAction = new QAction(tr("Add &Color Source..."), this);
-  addColorAction->setShortcut(Qt::CTRL + Qt::SHIFT + Qt::Key_A);
+  addColorAction->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_A);
   addColorAction->setIcon(QIcon(":/add-color"));
   addColorAction->setToolTip(tr("Add a color paint..."));
   addColorAction->setIconVisibleInMenu(false);
@@ -1799,7 +1820,7 @@ void MainWindow::createActions()
 
   // Duplicate.
   duplicateMappingAction = new QAction(tr("Duplicate Layer"), this);
-  duplicateMappingAction->setShortcut(Qt::CTRL + Qt::Key_D);
+  duplicateMappingAction->setShortcut(Qt::CTRL | Qt::Key_D);
   duplicateMappingAction->setToolTip(tr("Duplicate layer item"));
   duplicateMappingAction->setIconVisibleInMenu(false);
   duplicateMappingAction->setEnabled(false);
@@ -1964,7 +1985,7 @@ void MainWindow::createActions()
   // Preferences...
   preferencesAction = new QAction(tr("&Preferences..."), this);
   //preferencesAction->setIcon(QIcon(":/preferences"));
-  preferencesAction->setShortcut(Qt::CTRL + Qt::Key_Comma);
+  preferencesAction->setShortcut(Qt::CTRL | Qt::Key_Comma);
   preferencesAction->setToolTip(tr("Configure preferences..."));
   //preferencesAction->setIconVisibleInMenu(false);
   preferencesAction->setShortcutContext(Qt::ApplicationShortcut);
@@ -1973,7 +1994,7 @@ void MainWindow::createActions()
 
   // Add mesh.
   addMeshAction = new QAction(tr("Add &Mesh Layer"), this);
-  addMeshAction->setShortcut(Qt::CTRL + Qt::Key_M);
+  addMeshAction->setShortcut(Qt::CTRL | Qt::Key_M);
   addMeshAction->setIcon(QIcon(":/add-mesh"));
   addMeshAction->setToolTip(tr("Add mesh layer"));
   addMeshAction->setIconVisibleInMenu(false);
@@ -1984,7 +2005,7 @@ void MainWindow::createActions()
 
   // Add triangle.
   addTriangleAction = new QAction(tr("Add &Triangle Layer"), this);
-  addTriangleAction->setShortcut(Qt::CTRL + Qt::Key_T);
+  addTriangleAction->setShortcut(Qt::CTRL | Qt::Key_T);
   addTriangleAction->setIcon(QIcon(":/add-triangle"));
   addTriangleAction->setToolTip(tr("Add triangle layer"));
   addTriangleAction->setIconVisibleInMenu(false);
@@ -1995,7 +2016,7 @@ void MainWindow::createActions()
 
   // Add ellipse.
   addEllipseAction = new QAction(tr("Add &Ellipse Layer"), this);
-  addEllipseAction->setShortcut(Qt::CTRL + Qt::Key_E);
+  addEllipseAction->setShortcut(Qt::CTRL | Qt::Key_E);
   addEllipseAction->setIcon(QIcon(":/add-ellipse"));
   addEllipseAction->setToolTip(tr("Add ellipse layer"));
   addEllipseAction->setIconVisibleInMenu(false);
@@ -2005,7 +2026,7 @@ void MainWindow::createActions()
   addEllipseAction->setEnabled(false);
 
   // Play.
-  const QKeySequence PLAY_PAUSE_KEY_SEQUENCE = Qt::CTRL + Qt::SHIFT + Qt::Key_P;
+  const QKeySequence PLAY_PAUSE_KEY_SEQUENCE = Qt::CTRL | Qt::SHIFT | Qt::Key_P;
   playAction = new QAction(tr("Play"), this);
   playAction->setShortcut(PLAY_PAUSE_KEY_SEQUENCE);
   playAction->setIcon(QIcon(":/play"));
@@ -2029,7 +2050,7 @@ void MainWindow::createActions()
 
   // Rewind.
   rewindAction = new QAction(tr("Restart"), this);
-  rewindAction->setShortcut(Qt::CTRL + Qt::Key_R);
+  rewindAction->setShortcut(Qt::CTRL | Qt::Key_R);
   rewindAction->setIcon(QIcon(":/rewind"));
   rewindAction->setToolTip(tr("Restart"));
   rewindAction->setIconVisibleInMenu(false);
@@ -2039,7 +2060,7 @@ void MainWindow::createActions()
 
   // Toggle display of output window.
   outputFullScreenAction = new QAction(tr("Toggle &Fullscreen"), this);
-  outputFullScreenAction->setShortcut(Qt::CTRL + Qt::Key_F);
+  outputFullScreenAction->setShortcut(Qt::CTRL | Qt::Key_F);
   outputFullScreenAction->setIcon(QIcon(":/fullscreen"));
   outputFullScreenAction->setToolTip(tr("Toggle Fullscreen"));
   outputFullScreenAction->setIconVisibleInMenu(false);
@@ -2050,7 +2071,10 @@ void MainWindow::createActions()
   addAction(outputFullScreenAction);
   // Manage fullscreen/modal show of GL output window.
   connect(outputFullScreenAction, SIGNAL(toggled(bool)), outputWindow, SLOT(setFullScreen(bool)));
-  connect(QApplication::desktop(), SIGNAL(screenCountChanged(int)), this, SLOT(updateScreenCount()));
+  // In Qt6, QApplication::desktop() is removed; use QGuiApplication::screens() signals instead
+  // Note: screenCountChanged is not a direct equivalent; we use screenAdded/screenRemoved instead
+  connect(qApp, &QGuiApplication::screenAdded, this, [this](QScreen*) { updateScreenCount(); });
+  connect(qApp, &QGuiApplication::screenRemoved, this, [this](QScreen*) { updateScreenCount(); });
   // Create hiden action for closing output window
   QAction *closeOutput = new QAction(this);
   closeOutput->setShortcut(Qt::Key_Escape);
@@ -2060,7 +2084,7 @@ void MainWindow::createActions()
 
   // Toggle display of canvas controls.
   displayControlsAction = new QAction(tr("&Display Controls"), this);
-  displayControlsAction->setShortcut(Qt::ALT + Qt::Key_C);
+  displayControlsAction->setShortcut(Qt::ALT | Qt::Key_C);
   displayControlsAction->setIcon(QIcon(":/control-points"));
   displayControlsAction->setToolTip(tr("Display canvas controls"));
   displayControlsAction->setIconVisibleInMenu(false);
@@ -2074,7 +2098,7 @@ void MainWindow::createActions()
 
   // Toggle display of canvas controls.
   displayPaintControlsAction = new QAction(tr("&Display Controls of Layers of a Source"), this);
-  //displayPaintControlsAction->setShortcut(Qt::ALT + Qt::Key_C);
+  //displayPaintControlsAction->setShortcut(Qt::ALT | Qt::Key_C);
   displayPaintControlsAction->setIcon(QIcon(":/control-points"));
   displayPaintControlsAction->setToolTip(tr("Display all canvas controls related to current source"));
   displayPaintControlsAction->setIconVisibleInMenu(false);
@@ -2089,7 +2113,7 @@ void MainWindow::createActions()
 
   // Toggle sticky vertices
   stickyVerticesAction = new QAction(tr("&Sticky Vertices"), this);
-  stickyVerticesAction->setShortcut(Qt::ALT + Qt::Key_S);
+  stickyVerticesAction->setShortcut(Qt::ALT | Qt::Key_S);
   stickyVerticesAction->setIcon(QIcon(":/control-points"));
   stickyVerticesAction->setToolTip(tr("Enable sticky vertices"));
   stickyVerticesAction->setIconVisibleInMenu(false);
@@ -2101,7 +2125,7 @@ void MainWindow::createActions()
   connect(stickyVerticesAction, SIGNAL(toggled(bool)), this, SLOT(enableStickyVertices(bool)));
 
   displayTestSignalAction = new QAction(tr("Show &Test Signal"), this);
-  displayTestSignalAction->setShortcut(Qt::ALT + Qt::Key_T);
+  displayTestSignalAction->setShortcut(Qt::ALT | Qt::Key_T);
   displayTestSignalAction->setIcon(QIcon(":/toggle-test-signal"));
   displayTestSignalAction->setToolTip(tr("Show Test signal"));
   displayTestSignalAction->setIconVisibleInMenu(false);
@@ -2115,7 +2139,7 @@ void MainWindow::createActions()
 
   // Toggle display of Undo History
   displayUndoHistoryAction = new QAction(tr("Display &Undo History"), this);
-  displayUndoHistoryAction->setShortcut(Qt::ALT + Qt::Key_U);
+  displayUndoHistoryAction->setShortcut(Qt::ALT | Qt::Key_U);
   displayUndoHistoryAction->setCheckable(true);
   displayUndoHistoryAction->setChecked(_displayUndoStack);
   displayUndoHistoryAction->setShortcutContext(Qt::ApplicationShortcut);
@@ -2125,7 +2149,7 @@ void MainWindow::createActions()
 
   // Toggle display of Console output
   openConsoleAction = new QAction(tr("Open Conso&le"), this);
-  openConsoleAction->setShortcut(Qt::ALT + Qt::Key_L);
+  openConsoleAction->setShortcut(Qt::ALT | Qt::Key_L);
   openConsoleAction->setCheckable(true);
   openConsoleAction->setChecked(false);
   openConsoleAction->setShortcutContext(Qt::ApplicationShortcut);
@@ -2136,7 +2160,7 @@ void MainWindow::createActions()
 
   // Toggle display of zoom tool buttons
   displayZoomToolAction = new QAction(tr("Display &Zoom Toolbar"), this);
-  displayZoomToolAction->setShortcut(Qt::ALT + Qt::Key_Z);
+  displayZoomToolAction->setShortcut(Qt::ALT | Qt::Key_Z);
   displayZoomToolAction->setCheckable(true);
   displayZoomToolAction->setChecked(true);
   displayZoomToolAction->setShortcutContext(Qt::ApplicationShortcut);
@@ -2155,21 +2179,21 @@ void MainWindow::createActions()
   mainViewAction = new QAction(tr("Main Layout"), this);
   mainViewAction->setCheckable(true);
   mainViewAction->setChecked(true);
-  mainViewAction->setShortcut(Qt::CTRL + Qt::Key_1);
+  mainViewAction->setShortcut(Qt::CTRL | Qt::Key_1);
   mainViewAction->setToolTip(tr("Switch to the Main layout."));
   connect(mainViewAction, SIGNAL(triggered(bool)), canvasSplitter->widget(0), SLOT(setVisible(bool)));
   connect(mainViewAction, SIGNAL(triggered(bool)), canvasSplitter->widget(1), SLOT(setVisible(bool)));
   // Source Only
   sourceViewAction = new QAction(tr("Input editor Layout"), this);
   sourceViewAction->setCheckable(true);
-  sourceViewAction->setShortcut(Qt::CTRL + Qt::Key_2);
+  sourceViewAction->setShortcut(Qt::CTRL | Qt::Key_2);
   sourceViewAction->setToolTip(tr("Switch to the Input editor Layout."));
   connect(sourceViewAction, SIGNAL(triggered(bool)), canvasSplitter->widget(0), SLOT(setVisible(bool)));
   connect(sourceViewAction, SIGNAL(triggered(bool)), canvasSplitter->widget(1), SLOT(setHidden(bool)));
   // Destination Only
   destViewAction = new QAction(tr("Output Editor Layout"), this);
   destViewAction->setCheckable(true);
-  destViewAction->setShortcut(Qt::CTRL + Qt::Key_3);
+  destViewAction->setShortcut(Qt::CTRL | Qt::Key_3);
   destViewAction->setToolTip(tr("Switch to the Output Editors Layout."));
   connect(destViewAction, SIGNAL(triggered(bool)), canvasSplitter->widget(0), SLOT(setHidden(bool)));
   connect(destViewAction, SIGNAL(triggered(bool)), canvasSplitter->widget(1), SLOT(setVisible(bool)));
@@ -2196,7 +2220,7 @@ void MainWindow::createActions()
   connect(zoomOutAction, SIGNAL(triggered()), destinationCanvas, SLOT(decreaseZoomLevel()));
   // Reset zoom
   resetZoomAction = new QAction(tr("Original Size"), this);
-  resetZoomAction->setShortcut(Qt::CTRL + Qt::Key_0);
+  resetZoomAction->setShortcut(Qt::CTRL | Qt::Key_0);
   resetZoomAction->setToolTip(tr("Reset zoom to original size"));
   resetZoomAction->setEnabled(false);
   connect(resetZoomAction, SIGNAL(triggered()), sourceCanvas, SLOT(resetZoomLevel()));
@@ -2223,7 +2247,7 @@ void MainWindow::createActions()
   connect(feedbackAction, SIGNAL(triggered()), this, SLOT(sendFeedback()));
   // Keyboard shortcuts
   shortcutAction = new QAction(tr("&Keyboard shortcuts"), this);
-  shortcutAction->setShortcut(Qt::CTRL + Qt::Key_K);
+  shortcutAction->setShortcut(Qt::CTRL | Qt::Key_K);
   connect(shortcutAction, SIGNAL(triggered()), this, SLOT(openShortcutWindow()));
 
   // All available screen as action
@@ -2604,6 +2628,7 @@ bool MainWindow::okToContinue()
 
 bool MainWindow::loadFile(const QString &fileName)
 {
+  qDebug() << "[loadFile] START:" << fileName;
   QFile file(fileName);
   QDir currentDir;
 
@@ -2616,9 +2641,11 @@ bool MainWindow::loadFile(const QString &fileName)
     return false;
   }
 
+  qDebug() << "[loadFile] File opened OK, calling clearProject()...";
   // Clear current project.
   clearProject();
 
+  qDebug() << "[loadFile] clearProject() done, calling readFile()...";
   // Read new project
   ProjectReader reader(this);
   if (! reader.readFile(&file))
@@ -3206,7 +3233,9 @@ void MainWindow::removePaintItem(uid paintId)
     removeMappingItem(it.key());
   }
   // Remove paint from model.
-  Q_ASSERT( mappingManager->removePaint(paintId) );
+  bool removed = mappingManager->removePaint(paintId);
+  Q_ASSERT(removed);
+  Q_UNUSED(removed);
 
   // Remove associated mapper.
   paintPropertyPanel->removeWidget(paintGuis[paintId]->getPropertiesEditor());
@@ -3311,9 +3340,9 @@ QString MainWindow::locateMediaFile(const QString &uri, bool isImage)
   // Show a warning and offer to locate the file
   QMessageBox::warning(this,
                        tr("Cannot load movie"),
-                       tr("Unable to use file %1.\n"
+                       tr("Unable to use file:\n%1\n\n"
                           "The original file is not found. Please locate.")
-                       .arg(filename));
+                       .arg(uri));
 
   // Set the new uri
 #ifdef Q_OS_LINUX
@@ -3724,7 +3753,7 @@ bool MainWindow::setOscPort(int port)
 {
   if (port <= 1023 || port > 65535)
   {
-    qWarning() << "OSC port is out of range: " << port << endl;
+    qWarning() << "OSC port is out of range: " << port << Qt::endl;
     return false;
   }
   oscListeningPort = port;
@@ -3747,7 +3776,7 @@ bool MainWindow::setOscPort(QString portNumber)
   }
   else
   {
-    qWarning() << "OSC port is not a number: " << portNumber << endl;
+    qWarning() << "OSC port is not a number: " << portNumber << Qt::endl;
     return false;
   }
   return true;

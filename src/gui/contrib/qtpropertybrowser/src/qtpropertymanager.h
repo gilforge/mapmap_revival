@@ -44,6 +44,7 @@
 
 #include "qtpropertybrowser.h"
 #include <QLineEdit>
+#include <QRegExp>
 
 #if QT_VERSION >= 0x040400
 QT_BEGIN_NAMESPACE

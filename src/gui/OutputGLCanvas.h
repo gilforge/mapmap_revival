@@ -31,7 +31,7 @@ class OutputGLCanvas: public MapperGLCanvas
   Q_OBJECT
 
 public:
-  OutputGLCanvas(MainWindow* mainWindow, QWidget* parent = 0, const QGLWidget* shareWidget = 0, QGraphicsScene* scene = 0);
+  OutputGLCanvas(MainWindow* mainWindow, QWidget* parent = nullptr, QGraphicsScene* scene = nullptr);
   virtual ~OutputGLCanvas() {}
 
   // Adjust viewable scene to correspond to absolute coordinates.
@@ -65,12 +65,11 @@ private:
   bool _windowIsHovered;
 
 protected:
-  // overriden from QGlWidget:
-  virtual void resizeGL(int width, int height);
+  void resizeEvent(QResizeEvent *event) override;
 
   void wheelEvent(QWheelEvent *event);
   void mouseMoveEvent(QMouseEvent *event);
-  void enterEvent(QEvent * event);
+  void enterEvent(QEnterEvent * event);
   void leaveEvent(QEvent *event);
 };
 

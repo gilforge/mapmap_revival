@@ -24,7 +24,7 @@
 #include <QFile>
 #include <QDir>
 #include <iostream>
-#include <QRegExp>
+#include <QRegularExpression>
 
 namespace mmp {
 
@@ -250,8 +250,8 @@ bool eraseSettings()
 
 bool isNumeric(const QString& text)
 {
-  QRegExp re("\\d*"); // a digit (\d), zero or more times (*)
-  return (re.exactMatch(text));
+  QRegularExpression re("^\\d*$"); // a digit (\d), zero or more times (*)
+  return re.match(text).hasMatch();
 }
 
 } // end of namespace

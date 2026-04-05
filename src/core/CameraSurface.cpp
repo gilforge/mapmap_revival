@@ -40,71 +40,29 @@
 
 #include "CameraSurface.h"
 
-#include <QVideoSurfaceFormat>
-#include <QGLWidget>
 #include <QDebug>
 
 namespace mmp {
 
 CameraSurface::CameraSurface(QObject *parent)
-  : QAbstractVideoSurface(parent)
+  : QObject(parent)
 {
+    connect(&_videoSink, &QVideoSink::videoFrameChanged,
+            this, &CameraSurface::onVideoFrameChanged);
 }
 
 CameraSurface::~CameraSurface()
 {
 }
 
-QList<QVideoFrame::PixelFormat> CameraSurface::supportedPixelFormats(
-    QAbstractVideoBuffer::HandleType handleType) const
+void CameraSurface::onVideoFrameChanged(const QVideoFrame &frame)
 {
-
-  if (handleType == QAbstractVideoBuffer::NoHandle) {
-    return QList<QVideoFrame::PixelFormat>()
-        << QVideoFrame::Format_ARGB32
-        << QVideoFrame::Format_ARGB32_Premultiplied
-        << QVideoFrame::Format_RGB32
-        << QVideoFrame::Format_RGB24
-           ;
-  } else {
-    return QList<QVideoFrame::PixelFormat>();
-  }
-}
-
-bool CameraSurface::present(const QVideoFrame &frame)
-{
-  if (frame.isValid()) {
-    // Copy current frame.
-    QVideoFrame currentFrame(frame);
-
-    if (currentFrame.map(QAbstractVideoBuffer::ReadOnly))
-    {
-      QImage::Format imageFormat = QVideoFrame::imageFormatFromPixelFormat(currentFrame.pixelFormat());
-      if (imageFormat != QImage::Format_Invalid) {
-        _temporaryImage = QImage(currentFrame.bits(),
-                      currentFrame.width(),
-                      currentFrame.height(),
-                      imageFormat);
-      } else {
-        int nbytes = currentFrame.mappedBytes();
-        _temporaryImage = QImage::fromData(currentFrame.bits(), nbytes);
-      }
-      currentFrame.unmap();
+    if (frame.isValid()) {
+        _temporaryImage = frame.toImage();
+        if (!_temporaryImage.isNull()) {
+            _temporaryImage = _temporaryImage.convertToFormat(QImage::Format_RGBA8888);
+        }
     }
-
-#ifdef Q_OS_WIN
-    _temporaryImage = QGLWidget::convertToGLFormat(_temporaryImage);
-#else
-    // Convert to OpenGLformat and apply transforms to straighten.
-    _temporaryImage = QGLWidget::convertToGLFormat(_temporaryImage)
-                      .mirrored(true, false)
-                      .transformed(QTransform().rotate(180));
-#endif
-
-    return true;
-  }
-
-  return false;
 }
 
 const uchar* CameraSurface::bits()

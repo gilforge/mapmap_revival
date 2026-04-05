@@ -47,20 +47,20 @@ class ConcurrentQueue
 
         void push(Data const& data)
         {
-            QMutexLocker locker(&mutex_);
+            QMutexLocker<QMutex> locker(&mutex_);
             queue_.push(data);
             condition_.wakeOne();
         }
 
         bool empty() const
         {
-            QMutexLocker locker(&mutex_);
+            QMutexLocker<QMutex> locker(&mutex_);
             return queue_.empty();
         }
 
         bool try_pop(Data& popped_value)
         {
-            QMutexLocker locker(&mutex_);
+            QMutexLocker<QMutex> locker(&mutex_);
             if (queue_.empty())
             {
                 return false;
@@ -73,7 +73,7 @@ class ConcurrentQueue
 
         void wait_and_pop(Data& popped_value)
         {
-            QMutexLocker locker(&mutex_);
+            QMutexLocker<QMutex> locker(&mutex_);
             while (queue_.empty())
             {
                 condition_.wait(&mutex_);

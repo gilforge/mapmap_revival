@@ -29,7 +29,7 @@ OutputGLWindow:: OutputGLWindow(QWidget* parent, const MapperGLCanvas* canvas_) 
 {
   resize(MainWindow::OUTPUT_WINDOW_MINIMUM_WIDTH, MainWindow::OUTPUT_WINDOW_MINIMUM_HEIGHT);
 
-  canvas = new OutputGLCanvas(canvas_->getMainWindow(), this, (const QGLWidget*)canvas_->viewport(), canvas_->scene());
+  canvas = new OutputGLCanvas(canvas_->getMainWindow(), this, canvas_->scene());
   canvas->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   canvas->setMinimumSize(MainWindow::OUTPUT_WINDOW_MINIMUM_WIDTH, MainWindow::OUTPUT_WINDOW_MINIMUM_HEIGHT);
 
@@ -105,7 +105,9 @@ void OutputGLWindow::_updateToPreferredScreen()
   // Check if user is on multiple screen (always pre
   int screen = getPreferredScreen();
   //Move window to second screen before fullscreening it.
-  setGeometry(QApplication::desktop()->screenGeometry(screen));
+  QList<QScreen*> screens = QApplication::screens();
+  if (screen >= 0 && screen < screens.size())
+    setGeometry(screens[screen]->geometry());
 }
 
 void OutputGLWindow::_setFullScreen(bool fullscreen)

@@ -41,27 +41,29 @@
 #ifndef CAMERA_SURFACE_H_
 #define CAMERA_SURFACE_H_
 
-#include <QAbstractVideoSurface>
-#include <QVideoSurfaceFormat>
+#include <QVideoSink>
+#include <QVideoFrame>
 #include <QGraphicsItem>
-#include <QAudio>
+#include <QAudioOutput>
+#include <QImage>
 
 namespace mmp {
 
-class CameraSurface : public QAbstractVideoSurface
+class CameraSurface : public QObject
 {
     Q_OBJECT
 public:
     CameraSurface(QObject *parent = nullptr);
     ~CameraSurface() override;
 
-    QList<QVideoFrame::PixelFormat> supportedPixelFormats(
-            QAbstractVideoBuffer::HandleType handleType) const override;
-    bool present(const QVideoFrame &frame) override;
-
+    QVideoSink* videoSink() { return &_videoSink; }
     const uchar* bits();
 
+private slots:
+    void onVideoFrameChanged(const QVideoFrame &frame);
+
 private:
+    QVideoSink _videoSink;
     QImage _temporaryImage;
 };
 

@@ -70,7 +70,7 @@ MappingGui::MappingGui(Mapping::ptr mapping)
 
   connect(_variantManager, SIGNAL(valueChanged(QtProperty*, const QVariant&)),
           this,            SLOT(setValue(QtProperty*, const QVariant&)));
-  //qDebug() << "Creating mapper" << endl;
+  //qDebug() << "Creating mapper" << Qt::endl;
 }
 
 
@@ -287,7 +287,7 @@ TextureMappingGui::TextureMappingGui(QSharedPointer<TextureMapping> mapping)
   // Input shape.
   _inputItem = _variantManager->addProperty(QtVariantPropertyManager::groupTypeId(),
                                             QObject::tr("Input shape"));
-  _buildShapeProperty(_inputItem, inputShape.data());
+  _buildShapeProperty(_inputItem, inputShape.toStrongRef().data());
   _propertyBrowser->insertProperty(_inputItem, _paintItem); // insert
 
   // Collapse input shape.
@@ -401,7 +401,7 @@ TriangleTextureMappingGui::TriangleTextureMappingGui(QSharedPointer<TextureMappi
 //
 //void TriangleTextureMappingGui::_doDraw(QPainter* painter)
 //{
-//  qDebug() << "Is this really used!" << endl;
+//  qDebug() << "Is this really used!" << Qt::endl;
 ////  Q_UNUSED(painter);
 ////  glBegin(GL_TRIANGLES);
 ////  {

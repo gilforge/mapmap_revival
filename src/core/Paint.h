@@ -38,7 +38,8 @@
 #include "Element.h"
 #include "Maths.h"
 
-#include <QCameraInfo>
+#include <QMediaDevices>
+#include <QCameraDevice>
 
 namespace mmp {
 
@@ -211,7 +212,11 @@ public:
 
   // Get Camera human-readable name from url
   QString getCameraNameFromUri(const QString &uri) {
-    return QCameraInfo(uri.toLocal8Bit()).description();
+    for (const QCameraDevice &cam : QMediaDevices::videoInputs()) {
+      if (QString::fromUtf8(cam.id()) == uri)
+        return cam.description();
+    }
+    return uri;
   }
 
 protected:

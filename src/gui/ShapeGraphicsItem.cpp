@@ -136,7 +136,7 @@ PolygonColorGraphicsItem::PolygonColorGraphicsItem(Mapping::ptr mapping, bool ou
 QPainterPath PolygonColorGraphicsItem::shape() const
 {
   QPainterPath path;
-  Polygon* poly = static_cast<Polygon*>(_shape.data());
+  Polygon* poly = static_cast<Polygon*>(_shape.toStrongRef().data());
   Q_ASSERT(poly);
   path.addPolygon(poly->toPolygon());
   return mapFromScene(path);
@@ -146,7 +146,7 @@ void PolygonColorGraphicsItem::_doPaint(QPainter *painter,
                                         const QStyleOptionGraphicsItem *option)
 {
   Q_UNUSED(option);
-  Polygon* poly = static_cast<Polygon*>(_shape.data());
+  Polygon* poly = static_cast<Polygon*>(_shape.toStrongRef().data());
   Q_ASSERT(poly);
   painter->drawPolygon(mapFromScene(poly->toPolygon()));
 }
@@ -162,7 +162,7 @@ void MeshColorGraphicsItem::_doPaint(QPainter *painter,
 {
   Q_UNUSED(option);
 
-  Mesh* mesh = static_cast<Mesh*>(_shape.data());
+  Mesh* mesh = static_cast<Mesh*>(_shape.toStrongRef().data());
   QVector<QVector<Quad::ptr> > quads = mesh->getQuads2d();
 
   // Go through the mesh quad by quad.
@@ -186,7 +186,7 @@ QPainterPath EllipseColorGraphicsItem::shape() const
 {
   // Create path for ellipse.
   QPainterPath path;
-  Ellipse* ellipse = static_cast<Ellipse*>(_shape.data());
+  Ellipse* ellipse = static_cast<Ellipse*>(_shape.toStrongRef().data());
   Q_ASSERT(ellipse);
   QTransform transform;
   transform.translate(ellipse->getCenter().x(), ellipse->getCenter().y());
@@ -257,7 +257,39 @@ void TextureGraphicsItem::_prePaint(QPainter* painter,
 	Q_CHECK_PTR(texture);
 
   Q_UNUSED(option);
+
+  // In Qt6 with QOpenGLWidget, beginNativePainting() may not preserve
+  // the QPainter's combined transform in the GL matrices. We must set
+  // up the GL projection and modelview manually so that scene coordinates
+  // (used by mapFromScene in glVertex calls) map correctly to the viewport.
+  QTransform combinedTransform = painter->combinedTransform();
+
   painter->beginNativePainting();
+
+  // Set up GL matrices to match the QPainter's coordinate system.
+  {
+    // Get the viewport (device) dimensions.
+    int vpWidth  = painter->device()->width();
+    int vpHeight = painter->device()->height();
+
+    glViewport(0, 0, vpWidth, vpHeight);
+
+    // Orthographic projection: top-left origin, Y going down (Qt convention).
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, vpWidth, vpHeight, 0, -1, 1);
+
+    // Apply the QPainter's combined transform as the modelview matrix.
+    // This maps item (scene) coordinates to device (viewport) coordinates.
+    glMatrixMode(GL_MODELVIEW);
+    GLdouble m[16] = {
+      combinedTransform.m11(), combinedTransform.m12(), 0, 0,
+      combinedTransform.m21(), combinedTransform.m22(), 0, 0,
+      0,                       0,                       1, 0,
+      combinedTransform.m31(), combinedTransform.m32(), 0, 1
+    };
+    glLoadMatrixd(m);
+  }
 
   // Project source texture and sent it to destination.
   texture->update();
@@ -308,6 +340,10 @@ void TextureGraphicsItem::_postPaint(QPainter* painter,
 
   glDisable(GL_TEXTURE_2D);
 
+  // Reset modelview to identity before returning to QPainter.
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+
   // Ensure all GL commands are completed before returning to QPainter mode.
   // This prevents flickering and missing control points on Intel integrated GPUs
   // where the driver may not synchronize GL and QPainter rendering properly.
@@ -324,7 +360,7 @@ QSharedPointer<Texture> TextureGraphicsItem::_getTexture()
 QPainterPath PolygonTextureGraphicsItem::shape() const
 {
   QPainterPath path;
-  Polygon* poly = static_cast<Polygon*>(_shape.data());
+  Polygon* poly = static_cast<Polygon*>(_shape.toStrongRef().data());
   Q_ASSERT(poly);
   path.addPolygon(poly->toPolygon());
   return mapFromScene(path);
@@ -568,7 +604,7 @@ QPainterPath EllipseTextureGraphicsItem::shape() const
 {
   // Create path for ellipse.
   QPainterPath path;
-  Ellipse* ellipse = static_cast<Ellipse*>(_shape.data());
+  Ellipse* ellipse = static_cast<Ellipse*>(_shape.toStrongRef().data());
   Q_ASSERT(ellipse);
   QTransform transform;
   transform.translate(ellipse->getCenter().x(), ellipse->getCenter().y());

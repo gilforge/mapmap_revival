@@ -28,7 +28,7 @@
 namespace mmp {
 
 MapperGLCanvas::MapperGLCanvas(MainWindow* mainWindow,
-                               bool isOutput, QWidget* parent, const QGLWidget * shareWidget,
+                               bool isOutput, QWidget* parent,
                                QGraphicsScene* scene)
   : QGraphicsView(parent),
     _mainWindow(mainWindow),
@@ -36,18 +36,17 @@ MapperGLCanvas::MapperGLCanvas(MainWindow* mainWindow,
     _vertexGrabbed(false),
     _vertexMoved(false),
     _activeVertex(NO_VERTEX),
-    _shapeGrabbed(false), // comment out?
+    _shapeGrabbed(false),
     _shapeMoved(false),
-    _shapeFirstGrab(false), // comment out?
+    _shapeFirstGrab(false),
     _zoomLevel(0),
+    _scalingFactor(1.0),
     _shapeIsAdapted(false)
 {
-  // For now clicking on the window doesn't do anything.
   setDragMode(QGraphicsView::NoDrag);
 
   setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing |
-                 QPainter::HighQualityAntialiasing | QPainter::SmoothPixmapTransform);
-  // Dont need to always see scroll bar
+                 QPainter::SmoothPixmapTransform);
   setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
   setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
@@ -57,21 +56,13 @@ MapperGLCanvas::MapperGLCanvas(MainWindow* mainWindow,
   setResizeAnchor(AnchorViewCenter);
   setInteractive(true);
 
-  //setFrameStyle(Sunken | StyledPanel);
-  // TODO: check this
-  // setOptimizationFlags(QGraphicsView::DontSavePainterState);
-  //setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
   setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
 
   resetTransform();
-  // setAcceptDrops(true);
 
-  // Render with OpenGL.
-  // Enable double buffering and depth buffer alongside sample buffers
-  // to prevent flickering on Intel integrated GPUs.
-  QGLFormat glFormat(QGL::SampleBuffers | QGL::DoubleBuffer | QGL::DepthBuffer);
-  glFormat.setSwapInterval(1); // Enable VSync to prevent tearing
-  setViewport(new QGLWidget(glFormat, this, shareWidget));
+  // Render with OpenGL via QOpenGLWidget (Qt6).
+  QOpenGLWidget* glWidget = new QOpenGLWidget(this);
+  setViewport(glWidget);
   setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
 
   // TODO: do we need to delete scene (or call new QGraphicsScene(this)?)
@@ -171,10 +162,11 @@ void MapperGLCanvas::currentShapeWasChanged()
 
 void MapperGLCanvas::applyZoomToView()
 {
-  // Re-bound zoom (for consistency).
-  qreal zoomFactor = getZoomFactor();
+  // Compute zoom from _zoomLevel and update _scalingFactor.
+  _scalingFactor = qBound(MM::ZOOM_MIN, qPow(MM::ZOOM_FACTOR, _zoomLevel), MM::ZOOM_MAX);
+  qreal zoomFactor = _scalingFactor;
   // Resets the view transformation matrix
-  resetMatrix();
+  resetTransform();
   // Scale the current view
   scale(zoomFactor, zoomFactor);
   // And update
@@ -189,7 +181,7 @@ void MapperGLCanvas::dragEnterEvent(QDragEnterEvent *event)
   bool allowDrag = true;
 
   if (mimeData->hasUrls()) {
-    foreach (QUrl url, mimeData->urls()) {
+    for (const QUrl& url : mimeData->urls()) {
       QString fileName = url.toLocalFile();
       // Don't allow drag if file is not supported
       if (!MainWindow::window()->fileSupported(fileName, MM::FILE_EXTENSION) &&
@@ -220,7 +212,7 @@ void MapperGLCanvas::dropEvent(QDropEvent *event)
 
   if (mimeData->hasUrls()) {
     // In case that dragged many files
-    foreach (QUrl url, mimeData->urls()) {
+    for (const QUrl& url : mimeData->urls()) {
       QString fileName = url.toLocalFile();
 
       if (!fileName.isEmpty()) {
@@ -380,7 +372,7 @@ void MapperGLCanvas::mouseReleaseEvent(QMouseEvent* event)
   if (event->buttons() & Qt::MiddleButton)
   {
     QMouseEvent fakeEvent(
-          event->type(), event->pos(), event->globalPos(),
+          event->type(), event->position(), event->globalPosition(),
           Qt::LeftButton, event->buttons() & ~Qt::LeftButton,
           event->modifiers());
     QGraphicsView::mouseReleaseEvent(&fakeEvent);
@@ -711,43 +703,41 @@ void MapperGLCanvas::deselectAll()
 
 void MapperGLCanvas::wheelEvent(QWheelEvent *event)
 {
-  // [-120]-----[-1]|[1]++++++[120]
-  // See: http://doc.qt.io/qt-5/qwheelevent.html#angleDelta
-#if QT_VERSION >= 0x050500
-  int deltaLevel = event->angleDelta().y() / 120;
-#else
-  int deltaLevel = event->delta() / 120;
-#endif
-  bool control_is_pressed = event->modifiers().testFlag(Qt::ControlModifier);
-  bool shift_is_pressed = event->modifiers().testFlag(Qt::ShiftModifier);
-
-  if (control_is_pressed) { // control is pressed: zoom
-    // zoom in or out:
-    if (deltaLevel > 0) {
-      // Increase zoom level
-      increaseZoomLevel(deltaLevel);
-    } else {
-      // Decrease zoom level
-      decreaseZoomLevel(-deltaLevel);
-    }
-    // Accept wheel scrolling event.
-    event->accept();
-  } else { // control is not pressed: scroll
-    QScrollBar* scrollbar;
-    if (shift_is_pressed) { // shift is pressed: pans horizontally
-      scrollbar = this->horizontalScrollBar();
-    } else { // shift is not pressed: scrolls vertically
-      scrollbar = this->verticalScrollBar();
-    }
-    // FIXME: scrolling with the mouse doesn't currently work
-    int scroll = scrollbar->value();
-    if (deltaLevel > 0) {
-      scrollbar->setValue(scroll + 50);
-    } else {
-      scrollbar->setValue(scroll - 50);
-    }
-    event->accept();
+  int deltaLevel = event->angleDelta().y();
+  if (deltaLevel == 0) {
+    event->ignore();
+    return;
   }
+
+  // Zoom centered on cursor position.
+  // Get the scene position under the cursor BEFORE zooming.
+  QPointF scenePosBefore = mapToScene(event->position().toPoint());
+
+  // Compute zoom factor: smooth scaling based on wheel delta.
+  double factor = 1.0 + (deltaLevel / 1200.0);
+
+  // Clamp to min/max zoom.
+  qreal currentZoom = transform().m11();
+  qreal newZoom = currentZoom * factor;
+  if (newZoom < MM::ZOOM_MIN) factor = MM::ZOOM_MIN / currentZoom;
+  if (newZoom > MM::ZOOM_MAX) factor = MM::ZOOM_MAX / currentZoom;
+
+  // Apply the scale.
+  scale(factor, factor);
+
+  // Get the scene position under the cursor AFTER zooming.
+  QPointF scenePosAfter = mapToScene(event->position().toPoint());
+
+  // Translate the view so the cursor stays on the same scene point.
+  QPointF delta = scenePosAfter - scenePosBefore;
+  translate(delta.x(), delta.y());
+
+  // Update internal scaling factor for toolbar display.
+  _scalingFactor = transform().m11();
+  _shapeIsAdapted = false;
+  emit zoomFactorChanged(getZoomFactor());
+
+  event->accept();
 }
 
 bool MapperGLCanvas::eventFilter(QObject *target, QEvent *event)
@@ -823,7 +813,7 @@ void MapperGLCanvas::fitShapeToView()
     setSceneRect(scene()->itemsBoundingRect());
     centerOn(this->scene()->itemsBoundingRect().center());
     // Get the horizontal scaling factor
-    _scalingFactor = matrix().m11();
+    _scalingFactor = transform().m11();
 
     // Adapt shape
     _shapeIsAdapted = true;

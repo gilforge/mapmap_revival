@@ -24,7 +24,9 @@
 #include "VideoImpl.h"
 
 #include <QCamera>
-#include <QCameraInfo>
+#include <QMediaDevices>
+#include <QCameraDevice>
+#include <QMediaCaptureSession>
 
 namespace mmp {
 
@@ -42,12 +44,13 @@ public:
 
   const uchar* getBits();
 
-  bool hasBits() const { return _cameraSurface->isActive(); }
+  bool hasBits() const { return _camera && _camera->isActive(); }
 
   bool bitsHaveChanged() const { return true; }
 
 private:
   QCamera *_camera;
+  QMediaCaptureSession *_captureSession;
   CameraSurface *_cameraSurface;
 
 };

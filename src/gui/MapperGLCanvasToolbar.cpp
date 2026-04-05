@@ -88,7 +88,9 @@ void MapperGLCanvasToolbar::createZoomToolsLayout()
   // Create if empty or update list
   updateDropdownMenu();
   // And listen
-  connect(_dropdownMenu, SIGNAL(activated(QString)), _canvas, SLOT(setZoomFromMenu(QString)));
+  connect(_dropdownMenu, QOverload<int>::of(&QComboBox::activated), [this](int index) {
+    _canvas->setZoomFromMenu(_dropdownMenu->itemText(index));
+  });
 
   // Add widgets into layout
   toolbarLayout->addWidget(_titleLabel, 0, Qt::AlignVCenter);

@@ -20,6 +20,8 @@
 #ifndef MAPPERGLCANVASTOOLBAR_H_
 #define MAPPERGLCANVASTOOLBAR_H_
 
+#include <QtWidgets>
+
 #include "MM.h"
 #include "MapperGLCanvas.h"
 

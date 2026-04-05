@@ -42,6 +42,7 @@
 #include "qteditorfactory.h"
 #include "qtpropertybrowserutils_p.h"
 #include <QSpinBox>
+#include <QRegularExpressionValidator>
 #include <QScrollBar>
 #include <QComboBox>
 #include <QAbstractItemView>
@@ -1014,8 +1015,9 @@ void QtLineEditFactoryPrivate::slotRegExpChanged(QtProperty *property,
         editor->blockSignals(true);
         const QValidator *oldValidator = editor->validator();
         QValidator *newValidator = 0;
-        if (regExp.isValid()) {
-            newValidator = new QRegExpValidator(regExp, editor);
+        QRegularExpression re(regExp.pattern());
+        if (re.isValid()) {
+            newValidator = new QRegularExpressionValidator(re, editor);
         }
         editor->setValidator(newValidator);
         if (oldValidator)
@@ -1135,9 +1137,10 @@ QWidget *QtLineEditFactory::createEditor(QtStringPropertyManager *manager,
     QLineEdit *editor = d_ptr->createEditor(property, parent);
     editor->setEchoMode((EchoMode)manager->echoMode(property));
     editor->setReadOnly(manager->isReadOnly(property));
-    QRegExp regExp = manager->regExp(property);
+    QRegExp rx = manager->regExp(property);
+    QRegularExpression regExp(rx.pattern());
     if (regExp.isValid()) {
-        QValidator *validator = new QRegExpValidator(regExp, editor);
+        QValidator *validator = new QRegularExpressionValidator(regExp, editor);
         editor->setValidator(validator);
     }
     editor->setText(manager->value(property));
@@ -1670,7 +1673,7 @@ QtCharEdit::QtCharEdit(QWidget *parent)
 {
     QHBoxLayout *layout = new QHBoxLayout(this);
     layout->addWidget(m_lineEdit);
-    layout->setMargin(0);
+    layout->setContentsMargins(0, 0, 0, 0);
     m_lineEdit->installEventFilter(this);
     m_lineEdit->setReadOnly(true);
     m_lineEdit->setFocusProxy(this);
@@ -1794,7 +1797,7 @@ void QtCharEdit::keyReleaseEvent(QKeyEvent *e)
 void QtCharEdit::paintEvent(QPaintEvent *)
 {
     QStyleOption opt;
-    opt.init(this);
+    opt.initFrom(this);
     QPainter p(this);
     style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
 }
@@ -2330,11 +2333,9 @@ void QtColorEditWidget::setValue(const QColor &c)
 
 void QtColorEditWidget::buttonClicked()
 {
-    bool ok = false;
-    QRgb oldRgba = m_color.rgba();
-    QRgb newRgba = QColorDialog::getRgba(oldRgba, &ok, this);
-    if (ok && newRgba != oldRgba) {
-        setValue(QColor::fromRgba(newRgba));
+    QColor newColor = QColorDialog::getColor(m_color, this, QString(), QColorDialog::ShowAlphaChannel);
+    if (newColor.isValid() && newColor != m_color) {
+        setValue(newColor);
         emit valueChanged(m_color);
     }
 }
@@ -2366,7 +2367,7 @@ bool QtColorEditWidget::eventFilter(QObject *obj, QEvent *ev)
 void QtColorEditWidget::paintEvent(QPaintEvent *)
 {
     QStyleOption opt;
-    opt.init(this);
+    opt.initFrom(this);
     QPainter p(this);
     style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
 }
@@ -2588,7 +2589,7 @@ bool QtFontEditWidget::eventFilter(QObject *obj, QEvent *ev)
 void QtFontEditWidget::paintEvent(QPaintEvent *)
 {
     QStyleOption opt;
-    opt.init(this);
+    opt.initFrom(this);
     QPainter p(this);
     style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
 }

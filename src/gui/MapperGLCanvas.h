@@ -21,7 +21,7 @@
 #ifndef MAPPERGLCANVAS_H_
 #define MAPPERGLCANVAS_H_
 
-#include <QGLWidget>
+#include <QOpenGLWidget>
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include <QKeyEvent>
@@ -52,7 +52,7 @@ class MapperGLCanvas: public QGraphicsView
   Q_OBJECT
 public:
   /// Constructor.
-  MapperGLCanvas(MainWindow* mainWindow, bool isOutput, QWidget* parent = 0, const QGLWidget* shareWidget = 0, QGraphicsScene* scene = 0);
+  MapperGLCanvas(MainWindow* mainWindow, bool isOutput, QWidget* parent = nullptr, QGraphicsScene* scene = nullptr);
   virtual ~MapperGLCanvas() {}
 
   /// Returns shape associated with mapping id.
@@ -89,10 +89,7 @@ public:
   bool shapeGrabbed() const { return _shapeGrabbed; }
   bool vertexGrabbed() const { return _vertexGrabbed; }
 
-  //qreal getZoomFactor() const { return qBound(qPow(MM::ZOOM_FACTOR, _zoomLevel), MM::ZOOM_MIN, MM::ZOOM_MAX); }
-  qreal getZoomFactor() const { return _shapeIsAdapted
-        ? _scalingFactor
-        : qBound(MM::ZOOM_MIN, qPow(MM::ZOOM_FACTOR, _zoomLevel), MM::ZOOM_MAX); }
+  qreal getZoomFactor() const { return _scalingFactor; }
 
   /// This function needs to be called after a shape inside the canvas has been changed for appropriate signals to be activated.
   void currentShapeWasChanged();

@@ -24,8 +24,8 @@
 
 namespace mmp {
 
-OutputGLCanvas::OutputGLCanvas(MainWindow* mainWindow, QWidget* parent, const QGLWidget* shareWidget, QGraphicsScene* scene)
-: MapperGLCanvas(mainWindow, true, parent, shareWidget, scene),
+OutputGLCanvas::OutputGLCanvas(MainWindow* mainWindow, QWidget* parent, QGraphicsScene* scene)
+: MapperGLCanvas(mainWindow, true, parent, scene),
   _displayCrosshair(false),
   _displayTestSignal(false),
   _windowIsHovered(false)
@@ -80,11 +80,12 @@ void OutputGLCanvas::drawForeground(QPainter *painter , const QRectF &rect)
     {
 #ifdef Q_OS_OSX
       QPoint globalCursorPos = QCursor::pos();
-      int mouseScreen = QApplication::desktop()->screenNumber(globalCursorPos);
-      QRect mouseScreenGeometry = QApplication::desktop()->screen(mouseScreen)->geometry();
+      QScreen *screen = QGuiApplication::screenAt(globalCursorPos);
+      int mouseScreen = screen ? QGuiApplication::screens().indexOf(screen) : 0;
+      QRect mouseScreenGeometry = screen ? screen->geometry() : QRect();
       QPoint localCursorPos = globalCursorPos - mouseScreenGeometry.topLeft();
       QPointF cursorPosition = mapToScene(localCursorPos);
-//      qDebug() << "Cursor pos " << globalCursorPos << " " << cursorPosition << " " << localCursorPos << mouseScreen << endl;
+//      qDebug() << "Cursor pos " << globalCursorPos << " " << cursorPosition << " " << localCursorPos << mouseScreen << Qt::endl;
       if (rect.contains(cursorPosition) && getMainWindow()->getPreferredScreen() == mouseScreen)
 //      qDebug() << "Cursor pos " << mapToScene(mapFromGlobal(QCursor::pos(QApplication::screens()[1])));
 #else
@@ -110,7 +111,7 @@ void OutputGLCanvas::drawForeground(QPainter *painter , const QRectF &rect)
 
 }
 
-void OutputGLCanvas::enterEvent(QEvent *event)
+void OutputGLCanvas::enterEvent(QEnterEvent *event)
 {
   _windowIsHovered = true;
   QGraphicsView::enterEvent(event);
@@ -217,9 +218,7 @@ void OutputGLCanvas::_drawNTSCTestCard(QPainter* painter)
 
   // Draw backgroung image
   painter->drawImage(geo.x(), geo.y(), _ntscTestCard);
-  // Draw logo
-  QImage mapmapLogo = QImage(":/mapmap-logo-with-border").scaled(width, height / 15, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-  painter->drawImage((width - mapmapLogo.width()) / 2, height / 4, mapmapLogo);
+  // Logo removed (fork)
 
 
   // Draw text for screen resolution
@@ -246,8 +245,9 @@ void OutputGLCanvas::_drawResolutionText(QPainter *painter, const QRect &rect, i
   }
 }
 
-void OutputGLCanvas::resizeGL(int width, int height)
+void OutputGLCanvas::resizeEvent(QResizeEvent *event)
 {
+  MapperGLCanvas::resizeEvent(event);
   setSceneRectToViewportGeometry();
 }
 

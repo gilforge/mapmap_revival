@@ -29,7 +29,7 @@
 #endif
 
 #include <QFile>
-#include <QTextCodec>
+// QTextCodec removed in Qt6 - use QString::fromUtf8 instead
 #include <QFontDatabase>
 
 #include "MM.h"

@@ -18,11 +18,13 @@
  */
 
 #include "CameraImpl.h"
+#include <QMessageBox>
 
 namespace mmp {
 
 CameraImpl::CameraImpl() :
   _camera(nullptr),
+  _captureSession(nullptr),
   _cameraSurface(nullptr)
 {
 
@@ -30,8 +32,11 @@ CameraImpl::CameraImpl() :
 
 CameraImpl::~CameraImpl()
 {
-  _camera->stop();
-  delete _camera;
+  if (_camera) {
+    _camera->stop();
+    delete _camera;
+  }
+  delete _captureSession;
   delete _cameraSurface;
 }
 
@@ -39,16 +44,30 @@ bool CameraImpl::loadMovie(const QString &deviceName)
 {
   VideoImpl::loadMovie(deviceName);
 
-  _camera = new QCamera(deviceName.toLocal8Bit());
+  // Find the camera device by id
+  QCameraDevice selectedDevice;
+  for (const QCameraDevice &dev : QMediaDevices::videoInputs()) {
+    if (QString::fromUtf8(dev.id()) == deviceName) {
+      selectedDevice = dev;
+      break;
+    }
+  }
 
+  if (selectedDevice.isNull()) {
+    // Fallback to default camera
+    selectedDevice = QMediaDevices::defaultVideoInput();
+  }
+
+  _camera = new QCamera(selectedDevice);
   _cameraSurface = new CameraSurface();
+  _captureSession = new QMediaCaptureSession();
 
-  _camera->setViewfinder(_cameraSurface);
+  _captureSession->setCamera(_camera);
+  _captureSession->setVideoSink(_cameraSurface->videoSink());
 
-  if (_camera->isAvailable())
-    _camera->start();
+  _camera->start();
 
-  if (_camera->state() == QCamera::ActiveState)
+  if (_camera->isActive())
     return true;
 
   if (_camera->error() != QCamera::NoError)
@@ -60,12 +79,23 @@ bool CameraImpl::loadMovie(const QString &deviceName)
 
 int CameraImpl::getWidth() const
 {
-  return _cameraSurface->surfaceFormat().frameWidth();
+  // In Qt6, we get dimensions from the camera format
+  if (_camera) {
+    QCameraFormat fmt = _camera->cameraFormat();
+    if (!fmt.isNull())
+      return fmt.resolution().width();
+  }
+  return 0;
 }
 
 int CameraImpl::getHeight() const
 {
-  return _cameraSurface->surfaceFormat().frameHeight();
+  if (_camera) {
+    QCameraFormat fmt = _camera->cameraFormat();
+    if (!fmt.isNull())
+      return fmt.resolution().height();
+  }
+  return 0;
 }
 
 const uchar *CameraImpl::getBits()
