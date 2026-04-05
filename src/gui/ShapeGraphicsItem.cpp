@@ -268,20 +268,20 @@ void TextureGraphicsItem::_prePaint(QPainter* painter,
 
   // Set up GL matrices to match the QPainter's coordinate system.
   {
-    // Query the GL viewport that Qt configured (in physical pixels).
-    // Do NOT override it — Qt already set it correctly for the framebuffer,
-    // accounting for devicePixelRatio.
-    GLint vp[4];
-    glGetIntegerv(GL_VIEWPORT, vp);
-
     // The combinedTransform maps item coords → logical device coords.
-    // Compute the logical viewport size from the physical viewport and DPR.
+    // The GL viewport must be set in physical pixels (framebuffer size),
+    // while the ortho projection maps logical coords to NDC.
+    int logicalWidth  = painter->device()->width();
+    int logicalHeight = painter->device()->height();
     qreal dpr = painter->device()->devicePixelRatioF();
-    qreal logicalWidth  = vp[2] / dpr;
-    qreal logicalHeight = vp[3] / dpr;
+    int physicalWidth  = qRound(logicalWidth  * dpr);
+    int physicalHeight = qRound(logicalHeight * dpr);
 
-    // Orthographic projection: top-left origin, Y going down (Qt convention).
-    // Maps logical pixel coordinates to NDC; the GL viewport handles NDC → physical pixels.
+    // Viewport in physical pixels (GL framebuffer size).
+    glViewport(0, 0, physicalWidth, physicalHeight);
+
+    // Orthographic projection in logical pixels (matching combinedTransform output).
+    // Top-left origin, Y going down (Qt convention).
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(0, logicalWidth, logicalHeight, 0, -1, 1);
