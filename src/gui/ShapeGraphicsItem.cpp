@@ -661,10 +661,13 @@ void EllipseTextureGraphicsItem::_doDrawOutput(QPainter* painter)
       if (j > 0) // We don't draw the first triangle.
       {
         // Draw triangle.
+        // Output points must be mapped from scene to item coordinates
+        // so they match the GL modelview matrix (which is painter->combinedTransform(),
+        // mapping item coords → device coords).
         glBegin(GL_TRIANGLES);
-        Util::setGlTexPoint(*texture, inputData.controlCenter, outputData.controlCenter);
-        Util::setGlTexPoint(*texture, prevInputPoint,     prevOutputPoint);
-        Util::setGlTexPoint(*texture, currentInputPoint,  currentOutputPoint);
+        Util::setGlTexPoint(*texture, inputData.controlCenter, mapFromScene(outputData.controlCenter));
+        Util::setGlTexPoint(*texture, prevInputPoint,     mapFromScene(prevOutputPoint));
+        Util::setGlTexPoint(*texture, currentInputPoint,  mapFromScene(currentOutputPoint));
         glEnd();
       }
 
