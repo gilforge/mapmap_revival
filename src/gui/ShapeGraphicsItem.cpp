@@ -259,6 +259,24 @@ void TextureGraphicsItem::_prePaint(QPainter* painter,
   Q_UNUSED(option);
   painter->beginNativePainting();
 
+  // Explicitly set up GL viewport and orthographic projection in logical pixel
+  // coordinates. On Intel integrated GPUs, beginNativePainting() may not
+  // correctly account for device pixel ratio, causing a mismatch between the
+  // GL vertex positions (from mapFromScene, in logical pixels) and the actual
+  // physical viewport, which produces a visible offset vs QPainter-drawn control points.
+  {
+    QWidget* vp = getCanvas()->viewport();
+    int vpW = vp->width();
+    int vpH = vp->height();
+    qreal dpr = vp->devicePixelRatioF();
+    glViewport(0, 0, (GLsizei)(vpW * dpr), (GLsizei)(vpH * dpr));
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, vpW, vpH, 0, -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+  }
+
   // Project source texture and sent it to destination.
   texture->update();
 
