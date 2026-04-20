@@ -187,9 +187,16 @@ protected:
   virtual void _doDrawOutput(QPainter* painter) = 0;
   virtual void _doDrawInput(QPainter* painter);
 
+  // Set a GL texture point: maps outputScenePoint through _combinedTransform to device
+  // pixels and calls glTexCoord2f + glVertex2f. All shape draw methods use this.
+  void _glTexPoint(const QPointF& inputPoint, const QPointF& outputScenePoint);
+
 protected:
   QWeakPointer<TextureMapping> _textureMapping;
   QWeakPointer<MShape> _inputShape;
+
+  // Saved before beginNativePainting(); maps item/scene coords → device pixel coords.
+  QTransform _combinedTransform;
 
 	QSharedPointer<Texture> _getTexture();
 };

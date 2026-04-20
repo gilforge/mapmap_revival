@@ -224,29 +224,47 @@ void TextureGraphicsItem::_doPaint(QPainter *painter,
     _doDrawInput(painter);
 }
 
+void TextureGraphicsItem::_glTexPoint(const QPointF& inputPoint, const QPointF& outputScenePoint)
+{
+  QSharedPointer<Texture> tex = _getTexture();
+  // Texture coordinate: position within the source texture (0..1).
+  Util::correctGlTexCoord(
+    (inputPoint.x() - tex->getX()) / (GLfloat)tex->getWidth(),
+    (inputPoint.y() - tex->getY()) / (GLfloat)tex->getHeight());
+  // Vertex in device pixels: pre-transform through the painter's combined transform.
+  // This is guaranteed correct on all DPR/platform combinations since it uses
+  // the exact same transform that QPainter uses internally.
+  QPointF devPt = _combinedTransform.map(outputScenePoint);
+  glVertex2f(devPt.x(), devPt.y());
+}
+
 void TextureGraphicsItem::_doDrawInput(QPainter* painter)
 {
   Q_UNUSED(painter);
   if (isMappingCurrent())
   {
-    // FIXME: Does this draw the quad counterclockwise?
-    glBegin (GL_QUADS);
-    {
-      QRectF rect = mapFromScene(_getTexture()->getRect()).boundingRect();
+    QSharedPointer<Texture> tex = _getTexture();
+    QRectF rect = tex->getRect(); // scene coords
 
+    glBegin(GL_QUADS);
+    {
       Util::correctGlTexCoord(0, 0);
-      glVertex3f (rect.x(), rect.y(), 0);
+      QPointF p0 = _combinedTransform.map(QPointF(rect.x(), rect.y()));
+      glVertex2f(p0.x(), p0.y());
 
       Util::correctGlTexCoord(1, 0);
-      glVertex3f (rect.x() + rect.width(), rect.y(), 0);
+      QPointF p1 = _combinedTransform.map(QPointF(rect.x() + rect.width(), rect.y()));
+      glVertex2f(p1.x(), p1.y());
 
       Util::correctGlTexCoord(1, 1);
-      glVertex3f (rect.x()+rect.width(), rect.y()+rect.height(), 0);
+      QPointF p2 = _combinedTransform.map(QPointF(rect.x() + rect.width(), rect.y() + rect.height()));
+      glVertex2f(p2.x(), p2.y());
 
       Util::correctGlTexCoord(0, 1);
-      glVertex3f (rect.x(), rect.y()+rect.height(), 0);
+      QPointF p3 = _combinedTransform.map(QPointF(rect.x(), rect.y() + rect.height()));
+      glVertex2f(p3.x(), p3.y());
     }
-    glEnd ();
+    glEnd();
   }
 }
 
@@ -258,44 +276,31 @@ void TextureGraphicsItem::_prePaint(QPainter* painter,
 
   Q_UNUSED(option);
 
-  // In Qt6 with QOpenGLWidget, beginNativePainting() may not preserve
-  // the QPainter's combined transform in the GL matrices. We must set
-  // up the GL projection and modelview manually so that scene coordinates
-  // (used by mapFromScene in glVertex calls) map correctly to the viewport.
-  QTransform combinedTransform = painter->combinedTransform();
+  // In Qt6 with QOpenGLWidget, beginNativePainting() resets GL matrices.
+  // Rather than trying to replicate QPainter's internal transform in GL matrices
+  // (which depends on ambiguous DPR handling per platform/driver), we:
+  //   1. Save the combinedTransform before beginNativePainting.
+  //   2. After beginNativePainting, set up a trivial GL projection that maps
+  //      painter-viewport pixels 1:1 to the screen.
+  //   3. Pre-transform every vertex coordinate in software via _combinedTransform.map()
+  //      before passing to glVertex. This is guaranteed correct on all DPR configs.
+  _combinedTransform = painter->combinedTransform();
 
   painter->beginNativePainting();
 
-  // Set up GL matrices to match the QPainter's coordinate system.
+  // Set up a trivial GL coordinate system matching the QPainter viewport.
+  // painter->viewport() gives the rectangle in device pixels that combinedTransform
+  // maps into — this is the authoritative source for GL projection dimensions.
   {
-    // The combinedTransform maps item coords → logical device coords.
-    // The GL viewport must be set in physical pixels (framebuffer size),
-    // while the ortho projection maps logical coords to NDC.
-    int logicalWidth  = painter->device()->width();
-    int logicalHeight = painter->device()->height();
-    qreal dpr = painter->device()->devicePixelRatioF();
-    int physicalWidth  = qRound(logicalWidth  * dpr);
-    int physicalHeight = qRound(logicalHeight * dpr);
+    QRect vp = painter->viewport();
+    glViewport(vp.x(), vp.y(), vp.width(), vp.height());
 
-    // Viewport in physical pixels (GL framebuffer size).
-    glViewport(0, 0, physicalWidth, physicalHeight);
-
-    // Orthographic projection in logical pixels (matching combinedTransform output).
-    // Top-left origin, Y going down (Qt convention).
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(0, logicalWidth, logicalHeight, 0, -1, 1);
+    glOrtho(vp.left(), vp.right(), vp.bottom(), vp.top(), -1, 1);
 
-    // Apply the QPainter's combined transform as the modelview matrix.
-    // This maps item (scene) coordinates to logical device coordinates.
     glMatrixMode(GL_MODELVIEW);
-    GLdouble m[16] = {
-      combinedTransform.m11(), combinedTransform.m12(), 0, 0,
-      combinedTransform.m21(), combinedTransform.m22(), 0, 0,
-      0,                       0,                       1, 0,
-      combinedTransform.m31(), combinedTransform.m32(), 0, 1
-    };
-    glLoadMatrixd(m);
+    glLoadIdentity();
   }
 
   // Project source texture and sent it to destination.
@@ -387,7 +392,7 @@ void TriangleTextureGraphicsItem::_doDrawOutput(QPainter* painter)
     {
       for (int i=0; i<inputShape->nVertices(); i++)
       {
-        Util::setGlTexPoint(*_getTexture(), inputShape->getVertex(i), mapFromScene(getShape()->getVertex(i)));
+        _glTexPoint(inputShape->getVertex(i), getShape()->getVertex(i));
       }
     }
     glEnd();
@@ -473,7 +478,7 @@ void MeshTextureGraphicsItem::_doDrawOutput(QPainter* painter)
           glBegin(GL_QUADS);
           for (int i = 0; i < outputQuad->nVertices(); i++)
           {
-            Util::setGlTexPoint(*_getTexture(), m.input->getVertex(i), mapFromScene(m.output->getVertex(i)));
+            _glTexPoint(m.input->getVertex(i), m.output->getVertex(i));
           }
           glEnd();
         }
@@ -667,14 +672,10 @@ void EllipseTextureGraphicsItem::_doDrawOutput(QPainter* painter)
 
       if (j > 0) // We don't draw the first triangle.
       {
-        // Draw triangle.
-        // Output points must be mapped from scene to item coordinates
-        // so they match the GL modelview matrix (which is painter->combinedTransform(),
-        // mapping item coords → device coords).
         glBegin(GL_TRIANGLES);
-        Util::setGlTexPoint(*texture, inputData.controlCenter, mapFromScene(outputData.controlCenter));
-        Util::setGlTexPoint(*texture, prevInputPoint,     mapFromScene(prevOutputPoint));
-        Util::setGlTexPoint(*texture, currentInputPoint,  mapFromScene(currentOutputPoint));
+        _glTexPoint(inputData.controlCenter, outputData.controlCenter);
+        _glTexPoint(prevInputPoint,          prevOutputPoint);
+        _glTexPoint(currentInputPoint,       currentOutputPoint);
         glEnd();
       }
 
