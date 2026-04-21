@@ -50,8 +50,8 @@ MapperGLCanvas::MapperGLCanvas(MainWindow* mainWindow,
   setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
   setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
-  this->horizontalScrollBar()->setRange(0, 1000);
-  this->verticalScrollBar()->setRange(0, 1000);
+  setSceneRect(-50000, -50000, 100000, 100000);
+  centerOn(0, 0);
 
   setResizeAnchor(AnchorViewCenter);
   setInteractive(true);
@@ -165,11 +165,10 @@ void MapperGLCanvas::applyZoomToView()
   // Compute zoom from _zoomLevel and update _scalingFactor.
   _scalingFactor = qBound(MM::ZOOM_MIN, qPow(MM::ZOOM_FACTOR, _zoomLevel), MM::ZOOM_MAX);
   qreal zoomFactor = _scalingFactor;
-  // Resets the view transformation matrix
-  resetTransform();
-  // Scale the current view
-  scale(zoomFactor, zoomFactor);
-  // And update
+  // Zoom around viewport center, then restore mouse anchor.
+  setTransformationAnchor(AnchorViewCenter);
+  setTransform(QTransform::fromScale(zoomFactor, zoomFactor));
+  setTransformationAnchor(AnchorUnderMouse);
   update();
 
   emit zoomFactorChanged(zoomFactor);
@@ -244,22 +243,16 @@ void MapperGLCanvas::mousePressEvent(QMouseEvent* event)
   bool mousePressedOnSomething = false;
 
   _mousePressedPosition = event->pos();
+  _lastMousePos = event->pos();
   QPointF pos = mapToScene(event->pos());
 
-  // Drag the scene with middle button.
-  //  if (event->buttons() & Qt::MiddleButton)
-  //  {
-  //    // NOTE: This is a trick code to implement scroll hand drag using the middle button.
-  //    QMouseEvent releaseEvent(QEvent::MouseButtonRelease, event->pos(),
-  //            event->globalPos(), Qt::LeftButton, 0, event->modifiers());
-  //    QGraphicsView::mouseReleaseEvent(&releaseEvent);
-  //    setDragMode(QGraphicsView::ScrollHandDrag);
-
-  //    // We need to pretend it is actually the left button that was pressed!
-  //    QMouseEvent fakeEvent(event->type(), event->pos(), event->globalPos(),
-  //            Qt::LeftButton, event->buttons() | Qt::LeftButton, event->modifiers());
-  //    QGraphicsView::mousePressEvent(&fakeEvent);
-  //  }
+  // Middle button starts pan — consume the event immediately so Qt's
+  // QAbstractScrollArea autoscroll doesn't interfere.
+  if (event->button() == Qt::MiddleButton)
+  {
+    event->accept();
+    return;
+  }
 
   // Check for shape selection.
   if (event->buttons() & (Qt::LeftButton | Qt::RightButton))
@@ -427,8 +420,6 @@ void MapperGLCanvas::mouseReleaseEvent(QMouseEvent* event)
 
 void MapperGLCanvas::mouseMoveEvent(QMouseEvent* event)
 {
-  static QPoint lastMousePos;
-
   QPointF scenePos = mapToScene(event->pos());
 
   // Vertex grab.
@@ -478,7 +469,7 @@ void MapperGLCanvas::mouseMoveEvent(QMouseEvent* event)
     {
       if (_shapeFirstGrab)
       {
-        lastMousePos = _mousePressedPosition;
+        _lastMousePos = _mousePressedPosition;
         _shapeFirstGrab = false;
         // Reset the mode after moved shape
         getCurrentShape()->setShapeMode(MShape::DefaultMode);
@@ -486,7 +477,7 @@ void MapperGLCanvas::mouseMoveEvent(QMouseEvent* event)
 
       _shapeMoved = true; // The active vertex is actually moved
     }
-    QPointF diff = scenePos - mapToScene(lastMousePos);
+    QPointF diff = scenePos - mapToScene(_lastMousePos);
     undoStack->push(new TranslateShapeCommand(this, TransformShapeCommand::FREE, diff));
   }
 
@@ -494,13 +485,13 @@ void MapperGLCanvas::mouseMoveEvent(QMouseEvent* event)
   else if ((event->buttons() & Qt::MiddleButton) ||
            ((event->modifiers() & Qt::ShiftModifier) && (event->buttons() & Qt::LeftButton)))
   {
-    QPointF diff = event->pos() - lastMousePos;
-    QGraphicsView* view = scene()->views().first();
-    view->translate(diff.x(), diff.y());
+    QPoint diff = event->pos() - _lastMousePos;
+    horizontalScrollBar()->setValue(horizontalScrollBar()->value() - diff.x());
+    verticalScrollBar()->setValue(verticalScrollBar()->value() - diff.y());
   }
 
   // Reset last mouse position.
-  lastMousePos = event->pos();
+  _lastMousePos = event->pos();
 }
 
 
@@ -709,31 +700,26 @@ void MapperGLCanvas::wheelEvent(QWheelEvent *event)
     return;
   }
 
-  // Zoom centered on cursor position.
-  // Get the scene position under the cursor BEFORE zooming.
-  QPointF scenePosBefore = mapToScene(event->position().toPoint());
-
-  // Compute zoom factor: smooth scaling based on wheel delta.
-  double factor = 1.0 + (deltaLevel / 1200.0);
-
-  // Clamp to min/max zoom.
+  // Compute new zoom, clamped.
   qreal currentZoom = transform().m11();
-  qreal newZoom = currentZoom * factor;
-  if (newZoom < MM::ZOOM_MIN) factor = MM::ZOOM_MIN / currentZoom;
-  if (newZoom > MM::ZOOM_MAX) factor = MM::ZOOM_MAX / currentZoom;
+  double factor = 1.0 + (deltaLevel / 1200.0);
+  qreal newZoom = qBound((qreal)MM::ZOOM_MIN, currentZoom * factor, (qreal)MM::ZOOM_MAX);
 
-  // Apply the scale.
-  scale(factor, factor);
+  // Save the scene point under the cursor before zooming.
+  QPoint cursorViewport = event->position().toPoint();
+  QPointF scenePt = mapToScene(cursorViewport);
 
-  // Get the scene position under the cursor AFTER zooming.
-  QPointF scenePosAfter = mapToScene(event->position().toPoint());
+  // Apply zoom with NoAnchor so scrollbars are not touched by Qt.
+  setTransformationAnchor(NoAnchor);
+  setTransform(QTransform::fromScale(newZoom, newZoom));
+  setTransformationAnchor(AnchorUnderMouse);
 
-  // Translate the view so the cursor stays on the same scene point.
-  QPointF delta = scenePosAfter - scenePosBefore;
-  translate(delta.x(), delta.y());
+  // Adjust scrollbars so the scene point stays under the cursor.
+  QPoint newViewportPos = mapFromScene(scenePt);
+  horizontalScrollBar()->setValue(horizontalScrollBar()->value() + newViewportPos.x() - cursorViewport.x());
+  verticalScrollBar()->setValue(verticalScrollBar()->value() + newViewportPos.y() - cursorViewport.y());
 
-  // Update internal scaling factor for toolbar display.
-  _scalingFactor = transform().m11();
+  _scalingFactor = newZoom;
   _shapeIsAdapted = false;
   emit zoomFactorChanged(getZoomFactor());
 
@@ -809,8 +795,6 @@ void MapperGLCanvas::fitShapeToView()
     // Get first of the list of all the views
     // Scales the view matrix
     fitInView(this->scene()->itemsBoundingRect(), Qt::KeepAspectRatio);
-    // Center all shapes
-    setSceneRect(scene()->itemsBoundingRect());
     centerOn(this->scene()->itemsBoundingRect().center());
     // Get the horizontal scaling factor
     _scalingFactor = transform().m11();

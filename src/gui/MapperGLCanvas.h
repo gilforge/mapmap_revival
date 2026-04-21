@@ -142,6 +142,9 @@ private:
   // Last point pressed (in mouse/window coordinates).
   QPoint _mousePressedPosition;
 
+  // Last mouse position for middle-click panning (per-instance).
+  QPoint _lastMousePos;
+
   // Start position of last object grabbed (in scene coordinates).
   QPointF _grabbedObjectStartScenePosition;
 
