@@ -317,6 +317,9 @@ public:
   const QString getUri() const { return _uri; }
   bool setUri(const QString &uri);
 
+  /// Returns a human-readable error from the last failed setUri() call.
+  QString getLoadError() const;
+
   virtual void build();
   virtual void update();
 

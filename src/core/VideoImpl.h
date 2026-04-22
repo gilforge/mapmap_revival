@@ -132,6 +132,9 @@ public:
    */
   virtual bool loadMovie(const QString& filename);
 
+  /// Returns a human-readable error string set when loadMovie() fails.
+  QString getLoadError() const { return _loadError; }
+
   bool setPlayState(bool play);
   bool getPlayState() const { return _playState; }
 
@@ -202,6 +205,8 @@ protected:
   int _height;
 
   guint64 _duration; // duration (in nanoseconds) (unused for now)
+
+  QString _loadError;
 
   bool _videoIsConnected;
   bool _audioIsConnected;

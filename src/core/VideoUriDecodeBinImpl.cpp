@@ -202,37 +202,39 @@ bool VideoUriDecodeBinImpl::loadMovie(const QString& path) {
 
   switch (result) {
     case GST_DISCOVERER_URI_INVALID:
-      qDebug()<< "Invalid URI '" << uri << "'" << Qt::endl;
+      _loadError = QString("Fichier invalide ou URI incorrecte : %1").arg(uri);
+      qDebug() << _loadError << Qt::endl;
       break;
     case GST_DISCOVERER_ERROR:
-      qDebug()<< "Discoverer error: " << error->message << Qt::endl;
+      _loadError = QString("Erreur GStreamer : %1").arg(error ? error->message : "inconnue");
+      qDebug() << _loadError << Qt::endl;
       break;
     case GST_DISCOVERER_TIMEOUT:
-      qDebug() << "Timeout" << Qt::endl;
+      _loadError = "Délai dépassé lors de l'analyse du fichier vidéo.";
+      qDebug() << _loadError << Qt::endl;
       break;
     case GST_DISCOVERER_BUSY:
-      qDebug() << "Busy" << Qt::endl;
+      _loadError = "GStreamer occupé, réessayez.";
+      qDebug() << _loadError << Qt::endl;
       break;
-    case GST_DISCOVERER_MISSING_PLUGINS:{
-      const GstStructure *s;
-      gchar *str;
-
-      s = gst_discoverer_info_get_misc (info);
-      str = gst_structure_to_string (s);
-
-      qDebug() << "Missing plugins: " << str << Qt::endl;
-      g_free (str);
+    case GST_DISCOVERER_MISSING_PLUGINS: {
+      const GstStructure *s = gst_discoverer_info_get_misc(info);
+      gchar *str = s ? gst_structure_to_string(s) : g_strdup("inconnu");
+      _loadError = QString("Codec vidéo non supporté. Plugin GStreamer manquant : %1\n"
+                           "Conseil : installez gst-libav pour le support H.264/H.265.").arg(str);
+      qDebug() << _loadError << Qt::endl;
+      g_free(str);
       break;
     }
     case GST_DISCOVERER_OK:
+      _loadError.clear();
       qDebug() << "Discovered '" << uri << "'" << Qt::endl;
       break;
   }
 
-  g_clear_error (&error);
+  g_clear_error(&error);
 
   if (result != GST_DISCOVERER_OK) {
-    qDebug() << "This URI cannot be played" << Qt::endl;
     return false;
   }
 

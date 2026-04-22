@@ -2906,6 +2906,21 @@ bool MainWindow::importMediaFile(const QString &fileName, bool isImage, bool isC
   // Add media file to model.
   uint mediaId = createMediaPaint(NULL_UID, fileName, 0, 0, isImage, type);
 
+  // Check for video load failure (codec missing, etc.)
+  if (!isImage) {
+    QSharedPointer<Video> media = qSharedPointerCast<Video>(mappingManager->getPaintById(mediaId));
+    if (media && !media->getLoadError().isEmpty()) {
+      QApplication::restoreOverrideCursor();
+      QMessageBox::warning(this, tr("Vidéo non supportée"),
+                           tr("Impossible de lire le fichier :\n%1\n\n%2")
+                           .arg(QFileInfo(fileName).fileName())
+                           .arg(media->getLoadError()));
+      // Remove the failed media from the model
+      mappingManager->removePaint(mediaId);
+      return false;
+    }
+  }
+
   // Initialize position (center).
   QSharedPointer<Video> media = qSharedPointerCast<Video>(mappingManager->getPaintById(mediaId));
   Q_CHECK_PTR(media);

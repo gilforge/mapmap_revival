@@ -39,7 +39,11 @@ MainApplication::MainApplication(int &argc, char *argv[])
   QString appDir = QCoreApplication::applicationDirPath();
   QString pluginPath = appDir + "/lib/gstreamer-1.0";
 
-  // Set GStreamer plugin path
+  // Override the compiled-in system plugin path with a non-existent directory
+  // so that a system-wide GStreamer installation (e.g. C:\Program Files\gstreamer)
+  // does not conflict with our portable plugins.
+  qputenv("GST_PLUGIN_SYSTEM_PATH_1_0", "C:\\NoGStreamerHere");
+  qputenv("GST_PLUGIN_SYSTEM_PATH",     "C:\\NoGStreamerHere");
   qputenv("GST_PLUGIN_PATH", pluginPath.toLocal8Bit());
 
   // Prepend app directory to PATH so GStreamer DLLs are found

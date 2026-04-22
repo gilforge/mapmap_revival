@@ -302,6 +302,11 @@ bool Video::hasVideoSupport()
   return VideoImpl::hasVideoSupport();
 }
 
+QString Video::getLoadError() const
+{
+  return _impl ? _impl->getLoadError() : QString();
+}
+
 bool Video::setUri(const QString &uri)
 {
   QSettings settings;
