@@ -25,8 +25,28 @@
 #include "VideoUriDecodeBinImpl.h"
 #include <cstring>
 #include <iostream>
+#include <QFile>
+#include <QTextStream>
+#include <QDateTime>
+#include <QMutex>
+#include <QCoreApplication>
 
 namespace mmp {
+
+// Same helper as in VideoImpl.cpp — duplicated on purpose so we don't have to
+// refactor a header just to share this diagnostic log writer.
+static void mmDirectLog2(const QString& msg)
+{
+  static QMutex mutex;
+  QMutexLocker lock(&mutex);
+  QFile f(QCoreApplication::applicationDirPath() + "/mapmap_direct.log");
+  if (f.open(QIODevice::Append | QIODevice::Text)) {
+    QTextStream out(&f);
+    out << QDateTime::currentDateTime().toString("hh:mm:ss.zzz")
+        << " " << msg << "\n";
+    out.flush();
+  }
+}
 
 VideoUriDecodeBinImpl::VideoUriDecodeBinImpl() :
 _uridecodebin0(NULL)
@@ -36,12 +56,6 @@ _uridecodebin0(NULL)
 void VideoUriDecodeBinImpl::gstPadAddedCallback(GstElement *src, GstPad *newPad, VideoUriDecodeBinImpl* p)
 {
   Q_UNUSED(src);
-#ifdef VIDEO_IMPL_VERBOSE
-#ifndef Q_OS_OSX
-  // NOTE: This line was causing a problem on Mac OSX: it caused the software to freeze when loading a new movie.
-  qDebug() << "Received new pad '" << GST_PAD_NAME(newPad) << "' from '" << GST_ELEMENT_NAME (src) << "'." << Qt::endl;
-#endif
-#endif
 
   GstPad *sinkPad = NULL;
 
@@ -50,9 +64,13 @@ void VideoUriDecodeBinImpl::gstPadAddedCallback(GstElement *src, GstPad *newPad,
   GstStructure *newPadStruct = gst_caps_get_structure (newPadCaps, 0);
   const gchar *newPadType   = gst_structure_get_name (newPadStruct);
   gchar *newPadStructStr = gst_structure_to_string(newPadStruct);
-#ifdef VIDEO_IMPL_VERBOSE
-  qDebug() << "Structure is " << newPadStructStr << "." << Qt::endl;
-#endif
+  // Always log pad info — essential for codec diagnosis.
+  qInfo() << "pad-added: '" << GST_PAD_NAME(newPad) << "' type=" << newPadType
+          << " caps=" << newPadStructStr;
+  mmDirectLog2(QString("[pad-added] name='%1' type='%2' caps=%3")
+                 .arg(GST_PAD_NAME(newPad))
+                 .arg(newPadType)
+                 .arg(newPadStructStr));
   g_free(newPadStructStr);
 
   bool isVideoPad = g_str_has_prefix (newPadType, "video/x-raw");
@@ -107,22 +125,26 @@ void VideoUriDecodeBinImpl::gstPadAddedCallback(GstElement *src, GstPad *newPad,
   // Attempt the link.
   if (GST_PAD_LINK_FAILED (gst_pad_link (newPad, sinkPad)))
   {
-#ifdef VIDEO_IMPL_VERBOSE
-    qDebug() << "  Type is '" << newPadType << "' but link failed." << Qt::endl;
-#endif // ifdef
+    qInfo() << "  pad-added: link FAILED for type '" << newPadType << "'.";
+    mmDirectLog2(QString("[pad-added] link FAILED type='%1'").arg(newPadType));
     goto exit;
   }
   else
   {
     if (isVideoPad)
+    {
       p->videoConnect();
+      qInfo() << "  pad-added: video link OK.";
+      mmDirectLog2("[pad-added] video link OK");
+    }
     else if (isAudioPad)
+    {
       p->audioConnect();
+      qInfo() << "  pad-added: audio link OK.";
+      mmDirectLog2("[pad-added] audio link OK");
+    }
     else
       qWarning() << "Error: this pad is neither valid audio or video." << Qt::endl;
-#ifdef VIDEO_IMPL_VERBOSE
-    qDebug() << "  Link succeeded (type '" << newPadType << "')." << Qt::endl;
-#endif // ifdef
   }
 
 exit:
@@ -247,10 +269,51 @@ bool VideoUriDecodeBinImpl::loadMovie(const QString& path) {
   }
 
   // Retrieve meta-info.
-  _width = gst_discoverer_video_info_get_width((GstDiscovererVideoInfo*)videoStreams->data);
-  _height = gst_discoverer_video_info_get_height((GstDiscovererVideoInfo*)videoStreams->data);
+  GstDiscovererVideoInfo *vinfo = (GstDiscovererVideoInfo*)videoStreams->data;
+  _width    = gst_discoverer_video_info_get_width(vinfo);
+  _height   = gst_discoverer_video_info_get_height(vinfo);
   _duration = gst_discoverer_info_get_duration(info);
   _seekEnabled = gst_discoverer_info_get_seekable(info);
+
+  // Framerate.
+  guint fpsNum = gst_discoverer_video_info_get_framerate_num(vinfo);
+  guint fpsDen = gst_discoverer_video_info_get_framerate_denom(vinfo);
+  _fps = (fpsDen > 0) ? (double)fpsNum / fpsDen : 0.0;
+
+  // Bitrate (use max-bitrate if bitrate is 0).
+  _bitrate = gst_discoverer_video_info_get_bitrate(vinfo);
+  if (_bitrate == 0)
+    _bitrate = gst_discoverer_video_info_get_max_bitrate(vinfo);
+
+  // Codec name from stream caps.
+  GstCaps *caps = gst_discoverer_stream_info_get_caps(
+                    GST_DISCOVERER_STREAM_INFO(vinfo));
+  if (caps) {
+    gchar *capsStr = gst_caps_to_string(caps);
+    // Extract just the first token (e.g. "video/x-h264" → "H.264")
+    QString raw = QString::fromUtf8(capsStr);
+    raw = raw.section(',', 0, 0).trimmed(); // keep first cap field only
+    // Pretty-print common codec names.
+    if      (raw.contains("x-h264"))  _codecName = "H.264";
+    else if (raw.contains("x-h265"))  _codecName = "H.265 (HEVC)";
+    else if (raw.contains("x-vp8"))   _codecName = "VP8";
+    else if (raw.contains("x-vp9"))   _codecName = "VP9";
+    else if (raw.contains("x-av1"))   _codecName = "AV1";
+    else if (raw.contains("x-xvid") || raw.contains("x-divx")) _codecName = "MPEG-4";
+    else if (raw.contains("x-theora")) _codecName = "Theora";
+    else                               _codecName = raw;
+    g_free(capsStr);
+    gst_caps_unref(caps);
+  }
+
+  // Log video specs for diagnosis (codec, resolution, fps, duration, bitrate).
+  mmDirectLog2(QString("[VideoSpecs] codec=%1 %2x%3 fps=%4 duration=%5s bitrate=%6kbps seekable=%7")
+                 .arg(_codecName)
+                 .arg(_width).arg(_height)
+                 .arg(_fps, 0, 'f', 2)
+                 .arg(_duration / (double)GST_SECOND, 0, 'f', 2)
+                 .arg(_bitrate / 1000)
+                 .arg(_seekEnabled));
 
   // Free everything.
   g_object_unref(discoverer);
@@ -263,7 +326,9 @@ bool VideoUriDecodeBinImpl::loadMovie(const QString& path) {
   // Set uri of decoder.
   g_object_set (_uridecodebin0, "uri", uri, NULL);
 
-  setPlayState(true);
+  mmDirectLog2(QString("[VideoUriDecodeBin::loadMovie] setPlayState(true) uri=%1").arg(uri));
+  bool playOk = setPlayState(true);
+  mmDirectLog2(QString("[VideoUriDecodeBin::loadMovie] setPlayState returned %1").arg(playOk));
 
   return true;
 }

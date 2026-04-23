@@ -358,6 +358,24 @@ void Video::_doPause()
   _impl->setPlayState(false);
 }
 
+QString Video::getCodecName() const {
+  return _impl ? _impl->getCodecName() : QString();
+}
+
+QString Video::getDurationString() const {
+  return _impl ? _impl->getDurationString() : QString();
+}
+
+QString Video::getSizeString() const {
+  if (!_impl || _impl->getWidth() <= 0) return QString();
+  return QString("%1 × %2").arg(_impl->getWidth()).arg(_impl->getHeight());
+}
+
+QString Video::getFpsString() const {
+  if (!_impl || _impl->getFps() <= 0) return QString();
+  return QString("%1 fps").arg(_impl->getFps(), 0, 'f', 2);
+}
+
 bool Video::_generateThumbnail()
 {
   static QFileIconProvider provider;

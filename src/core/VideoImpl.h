@@ -135,6 +135,19 @@ public:
   /// Returns a human-readable error string set when loadMovie() fails.
   QString getLoadError() const { return _loadError; }
 
+  /// Video metadata (filled by GstDiscoverer during loadMovie).
+  double  getFps()       const { return _fps; }
+  int     getBitrate()   const { return _bitrate; }
+  QString getCodecName() const { return _codecName; }
+
+  /// Returns duration as a human-readable string (HH:MM:SS or MM:SS).
+  QString getDurationString() const {
+    if (_duration == 0) return QString();
+    qint64 secs = (qint64)(_duration / GST_SECOND);
+    return QString("%1:%2").arg(secs / 60, 2, 10, QChar('0'))
+                           .arg(secs % 60, 2, 10, QChar('0'));
+  }
+
   bool setPlayState(bool play);
   bool getPlayState() const { return _playState; }
 
@@ -204,7 +217,10 @@ protected:
   int _width;
   int _height;
 
-  guint64 _duration; // duration (in nanoseconds) (unused for now)
+  guint64 _duration;  // duration in nanoseconds
+  double  _fps;       // frames per second
+  int     _bitrate;   // bits per second
+  QString _codecName; // human-readable codec name (e.g. "H.264 (Main)")
 
   QString _loadError;
 
@@ -281,6 +297,21 @@ private:
   static const int MAX_SAMPLES_IN_BUFFER_QUEUES = 30;
 
   bool _playInLoop;
+
+  // Guard against multiple resetMovie() calls while a loop-flush is still
+  // being processed by the pipeline. Set in resetMovie(), cleared when a
+  // new sample actually arrives at the appsink (gstNewSampleCallback).
+  bool _loopPending = false;
+
+  // Wall-clock timestamp (ms since epoch) of the last accepted loop-restart.
+  // Short videos (e.g. rotoscopie.mp4 = 1.42s) were exhibiting a seek storm
+  // because a FLUSH seek temporarily breaks appsink clock sync, so the
+  // pipeline plays through the whole clip in a burst (~90ms), hits EOS
+  // again, and resetMovie fires a second time — ad infinitum. A minimum
+  // interval between resets (shorter than any realistic loop duration)
+  // breaks that feedback loop unconditionally.
+  qint64 _lastLoopResetMs = 0;
+  static constexpr qint64 LOOP_RESET_MIN_INTERVAL_MS = 500;
 };
 
 }

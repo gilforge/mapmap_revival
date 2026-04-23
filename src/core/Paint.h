@@ -305,9 +305,15 @@ class Video : public Texture
   Q_PROPERTY(double volume READ getVolume WRITE setVolume)
   Q_PROPERTY(double rate READ getRate WRITE setRate)
 
+  // Read-only metadata shown in the properties panel after a successful load.
+  Q_PROPERTY(QString codec    READ getCodecName)
+  Q_PROPERTY(QString duration READ getDurationString)
+  Q_PROPERTY(QString size     READ getSizeString)
+  Q_PROPERTY(QString fps      READ getFpsString)
+
 public:
   // Thumbnail generation timeout (in ms).
-  static const int ICON_TIMEOUT = 1000;
+  static const int ICON_TIMEOUT = 3000;
 
 public:
   Q_INVOKABLE Video(int id=NULL_UID);
@@ -359,6 +365,12 @@ public:
   static bool hasVideoSupport();
 
   virtual QIcon getIcon() const { return _icon; }
+
+  // Metadata getters (forwarded from VideoImpl, populated by GstDiscoverer).
+  QString getCodecName()     const;
+  QString getDurationString() const;
+  QString getSizeString()    const;
+  QString getFpsString()     const;
 
 protected:
 

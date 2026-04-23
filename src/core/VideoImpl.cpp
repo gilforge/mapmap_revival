@@ -26,8 +26,29 @@
 #include <iostream>
 #include <QElapsedTimer>
 #include <QThread>
+#include <QFile>
+#include <QTextStream>
+#include <QDateTime>
+#include <QMutex>
+#include <QCoreApplication>
 
 namespace mmp {
+
+// Direct-to-file logger that bypasses qInstallMessageHandler — useful because
+// GStreamer plugins loaded lazily during pipeline creation may overwrite our
+// Qt message handler. Opens/closes the file on each call (slow but reliable).
+static void mmDirectLog(const QString& msg)
+{
+  static QMutex mutex;
+  QMutexLocker lock(&mutex);
+  QFile f(QCoreApplication::applicationDirPath() + "/mapmap_direct.log");
+  if (f.open(QIODevice::Append | QIODevice::Text)) {
+    QTextStream out(&f);
+    out << QDateTime::currentDateTime().toString("hh:mm:ss.zzz")
+        << " " << msg << "\n";
+    out.flush();
+  }
+}
 
 // -------- private implementation of VideoImpl -------
 
@@ -155,11 +176,42 @@ bool VideoImpl::_eos() const
 
 GstFlowReturn VideoImpl::gstNewSampleCallback(GstElement*, VideoImpl *p)
 {
+  static int callCount = 0;
+  static QElapsedTimer rateTimer;
+  static int rateWindowStart = 0;
+  ++callCount;
+  // Log only the first 3 calls to avoid flooding the log file.
+  bool doLog = (callCount <= 3);
+  if (doLog) mmDirectLog(QString("[gstNewSampleCallback] ENTER call#%1").arg(callCount));
+
+  // Every 60 frames, log the effective arrival rate at the appsink.
+  // This tells us whether saccades come from the decoder falling behind
+  // (low rate) or from something else in the render loop (high rate).
+  if (callCount == 1) {
+    rateTimer.start();
+    rateWindowStart = 1;
+  } else if (callCount - rateWindowStart >= 60) {
+    qint64 elapsedMs = rateTimer.restart();
+    int frames = callCount - rateWindowStart;
+    double fps = frames * 1000.0 / (double)(elapsedMs ? elapsedMs : 1);
+    mmDirectLog(QString("[gstNewSampleCallback] appsink rate: %1 frames in %2ms = %3 fps")
+                  .arg(frames).arg(elapsedMs).arg(fps, 0, 'f', 2));
+    rateWindowStart = callCount;
+  }
+
   // Make it thread-safe.
   p->lockMutex();
 
   // Get next frame.
   GstSample *sample = gst_app_sink_pull_sample(GST_APP_SINK(p->_appsink0));
+
+  if (doLog) mmDirectLog(QString("[gstNewSampleCallback] pull_sample returned %1")
+                           .arg(sample ? "non-NULL" : "NULL"));
+
+  if (!sample) {
+    p->unlockMutex();
+    return GST_FLOW_OK;
+  }
 
   // Unref last frame.
   p->_freeCurrentSample();
@@ -177,11 +229,24 @@ GstFlowReturn VideoImpl::gstNewSampleCallback(GstElement*, VideoImpl *p)
     structure = gst_caps_get_structure(caps, 0);
     gst_structure_get_int(structure, "width",  &p->_width);
     gst_structure_get_int(structure, "height", &p->_height);
+    if (doLog) mmDirectLog(QString("[gstNewSampleCallback] caps dims %1x%2")
+                             .arg(p->_width).arg(p->_height));
+  }
+
+  if (doLog) {
+    GstCaps *caps = gst_sample_get_caps(sample);
+    gchar *capsStr = caps ? gst_caps_to_string(caps) : g_strdup("NULL");
+    mmDirectLog(QString("[gstNewSampleCallback] sample caps=%1").arg(capsStr));
+    g_free(capsStr);
   }
 
   // Try to retrieve data bits of frame.
   GstMapInfo& map = p->_mapInfo;
   GstBuffer *buffer = gst_sample_get_buffer( sample );
+  if (doLog) mmDirectLog(QString("[gstNewSampleCallback] buffer=%1 size=%2")
+                           .arg(buffer ? "non-NULL" : "NULL")
+                           .arg(buffer ? gst_buffer_get_size(buffer) : 0));
+
   if (gst_buffer_map(buffer, &map, GST_MAP_READ))
   {
     p->_currentFrameBuffer = buffer;
@@ -193,6 +258,15 @@ GstFlowReturn VideoImpl::gstNewSampleCallback(GstElement*, VideoImpl *p)
 
     // Bits have changed.
     p->_bitsChanged = true;
+    // A new frame reached the appsink: the loop-restart flush has landed,
+    // clear the "loop pending" guard so a future EOS can re-trigger a seek.
+    p->_loopPending = false;
+    if (doLog) mmDirectLog(QString("[gstNewSampleCallback] MAP OK data=%1 size=%2")
+                             .arg((quintptr)map.data, 0, 16).arg((qint64)map.size));
+  }
+  else
+  {
+    if (doLog) mmDirectLog("[gstNewSampleCallback] gst_buffer_map FAILED");
   }
 
   p->unlockMutex();
@@ -204,6 +278,9 @@ VideoImpl::VideoImpl() :
 _width(-1),
 _height(-1),
 _duration(0),
+_fps(0.0),
+_bitrate(0),
+_codecName(),
 _seekEnabled(false),
 _pipeline(NULL),
 _queue0(NULL),
@@ -259,7 +336,17 @@ void VideoImpl::freeResources()
 
   if (_pipeline)
   {
+    // Shut down cleanly: PLAYING → PAUSED → READY → NULL.
+    // Going directly to NULL can leave the WASAPI audio sink in an
+    // inconsistent state (AUDCLNT_E_NOT_INITIALIZED) which emits a thud
+    // on the speakers at app close. Each set_state call waits briefly
+    // for the transition to complete.
+    gst_element_set_state (_pipeline, GST_STATE_PAUSED);
+    gst_element_get_state (_pipeline, NULL, NULL, 200 * GST_MSECOND);
+    gst_element_set_state (_pipeline, GST_STATE_READY);
+    gst_element_get_state (_pipeline, NULL, NULL, 200 * GST_MSECOND);
     gst_element_set_state (_pipeline, GST_STATE_NULL);
+    gst_element_get_state (_pipeline, NULL, NULL, 200 * GST_MSECOND);
     gst_object_unref (GST_OBJECT(_pipeline));
     _pipeline = NULL;
   }
@@ -294,18 +381,36 @@ void VideoImpl::resetMovie()
 {
   if (_seekEnabled)
   {
+    // Debounce: reject loop-restarts that come too close together. After a
+    // FLUSH seek, the pipeline clock sync can momentarily break and frames
+    // are delivered in a burst, causing the whole clip to play through in
+    // a few ms → immediate EOS → another resetMovie → ad infinitum seek
+    // storm. The debounce caps the restart rate below any realistic loop
+    // duration and breaks the feedback loop unconditionally.
+    qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (nowMs - _lastLoopResetMs < LOOP_RESET_MIN_INTERVAL_MS)
+    {
+      mmDirectLog(QString("[resetMovie] debounced (%1ms since last reset)")
+                    .arg(nowMs - _lastLoopResetMs));
+      return;
+    }
+    _lastLoopResetMs = nowMs;
+
+    // Mark a loop-restart as in-flight. Cleared in gstNewSampleCallback
+    // when a new sample actually arrives, proving the flush completed.
+    _loopPending = true;
     if (_rate > 0.0)
     {
       seekTo((guint64) 0);
-      qWarning() << "update Rate" << Qt::endl;
-      _updateRate();
+      // NOTE: _updateRate() issues an additional seek. For a pure loop at
+      // unchanged rate this is redundant and doubles the flushes — it is
+      // only needed when the playback rate changes. Skipping it here
+      // reduces the per-loop work to a single FLUSH seek.
     }
     else
     {
       // NOTE: Untested.
       seekTo(_duration);
-      qWarning() << "update Rate" << Qt::endl;
-      _updateRate();
     }
   }
   else
@@ -358,9 +463,10 @@ bool VideoImpl::createVideoComponents()
   g_object_set (_capsfilter0, "caps", videoCaps, NULL);
 
   g_object_set (_appsink0, "emit-signals", TRUE,
-                           "max-buffers", 1,     // only one buffer (the last) is maintained in the queue
-                           "drop", TRUE,         // ... other buffers are dropped
-                           "sync", TRUE,
+                           "max-buffers", 1,     // only the latest frame is kept
+                           "drop", TRUE,         // older frames are dropped
+                           "sync", TRUE,         // respect pipeline clock → correct playback speed
+                           "async", FALSE,       // don't block pipeline state transitions waiting for this sink
                            NULL);
 
   g_signal_connect (_appsink0, "new-sample", G_CALLBACK (VideoImpl::gstNewSampleCallback), this);
@@ -434,7 +540,10 @@ void VideoImpl::update()
   if (_eos() || _terminate)
   {
     _setFinished(true);
-    if (_playInLoop) // Check if repeat mode is on
+    // Only trigger resetMovie if no loop-restart is already in flight.
+    // Otherwise update() (60fps) re-fires resetMovie many times before the
+    // pipeline has finished flushing → seek storm → burst frame delivery.
+    if (_playInLoop && !_loopPending)
       resetMovie();
   }
   else
@@ -453,11 +562,13 @@ void VideoImpl::update()
 }
 
  bool VideoImpl::loadMovie(const QString& filename) {
+   mmDirectLog(QString("[loadMovie] ENTER uri=%1").arg(filename));
    // Verify if file exists.
    const gchar* filetestpath = (const gchar*) filename.toUtf8().constData();
    if (FALSE == g_file_test(filetestpath, G_FILE_TEST_EXISTS))
    {
      qDebug() << "File " << filename << " does not exist" << Qt::endl;
+     mmDirectLog("[loadMovie] file does not exist");
      return false;
    }
 
@@ -543,7 +654,7 @@ bool VideoImpl::seekTo(double position)
 
 bool VideoImpl::seekTo(guint64 positionNanoSeconds)
 {
-  if (!_appsink0 || !_seekEnabled)
+  if (!_pipeline || !_seekEnabled)
   {
     return false;
   }
@@ -555,11 +666,44 @@ bool VideoImpl::seekTo(guint64 positionNanoSeconds)
     _freeCurrentSample();
     _bitsChanged = false;
 
-    // Seek to position.
+    // PAUSE → SEEK → PLAY pattern.
+    //
+    // Seeking a short clip while the pipeline is PLAYING leaves base_time
+    // stale: the new segment's frames all become "due in the past" from
+    // the clock's point of view, so appsink's sync=TRUE delivers the whole
+    // clip in a burst (rotoscopie.mp4 = 1.42s was playing in ~60ms).
+    //
+    // Going to PAUSED first (and waiting for the state to settle), then
+    // seeking with FLUSH, then returning to PLAYING, forces GStreamer to
+    // recompute base_time from the current clock so frames pace correctly.
+    GstState currentState = GST_STATE_NULL;
+    gst_element_get_state(_pipeline, &currentState, NULL, 0);
+    bool wasPlaying = (currentState == GST_STATE_PLAYING);
+
+    if (wasPlaying)
+    {
+      gst_element_set_state(_pipeline, GST_STATE_PAUSED);
+      gst_element_get_state(_pipeline, NULL, NULL, 200 * GST_MSECOND);
+    }
+
+    // IMPORTANT: seek on the whole _pipeline, NOT on _appsink0.
+    // Seeking just the appsink does not propagate the FLUSH / segment event
+    // properly to upstream elements. FLUSH clears buffered frames,
+    // KEY_UNIT snaps to a keyframe for a clean restart.
     bool result = gst_element_seek_simple(
-                    _appsink0, GST_FORMAT_TIME,
-                    GstSeekFlags( GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE ),
+                    _pipeline, GST_FORMAT_TIME,
+                    GstSeekFlags( GST_SEEK_FLAG_FLUSH
+                                  | GST_SEEK_FLAG_ACCURATE
+                                  | GST_SEEK_FLAG_KEY_UNIT ),
                     positionNanoSeconds);
+
+    if (wasPlaying)
+    {
+      gst_element_set_state(_pipeline, GST_STATE_PLAYING);
+    }
+
+    mmDirectLog(QString("[seekTo] %1ns result=%2 wasPlaying=%3")
+                  .arg((qint64)positionNanoSeconds).arg(result).arg(wasPlaying));
 
     unlockMutex();
 
@@ -746,13 +890,9 @@ void  VideoImpl::_updateRate()
         GST_SEEK_TYPE_SET, 0, GST_SEEK_TYPE_SET, position);
   }
 
-  // If we have not done so, obtain the sink through which we will send the seek events.
-  if (_appsink0 == NULL) {
-    g_object_get (_pipeline, "video-sink", &_appsink0, NULL);
-  }
-
-  // Send the event.
-  if (!gst_element_send_event (_appsink0, seekEvent)) {
+  // Send the seek event to the whole pipeline, not the appsink, so that the
+  // pipeline clock and base_time are reset properly (see seekTo() comment).
+  if (!gst_element_send_event (_pipeline, seekEvent)) {
     qWarning() << "Cannot perform seek event" << Qt::endl;
   }
 
@@ -795,25 +935,173 @@ void VideoImpl::unlockMutex()
 
 bool VideoImpl::waitForNextBits(int timeout, const uchar** bits)
 {
+  qInfo() << "[waitForNextBits] start, uri=" << _uri
+          << "connected=" << videoIsConnected()
+          << "timeout=" << timeout << "ms";
+  mmDirectLog(QString("[waitForNextBits] START uri=%1 connected=%2 timeout=%3")
+                .arg(_uri).arg(videoIsConnected()).arg(timeout));
+
   QElapsedTimer time;
   time.start();
   while (time.elapsed() < timeout)
   {
-    // Bits available.
+    if (_bus != NULL)
+    {
+      // Poll for diagnostic messages (non-blocking). Include STATE_CHANGED,
+      // ASYNC_DONE, STREAM_START, EOS to see the pipeline sequence — they are
+      // also handled by _checkMessages() later but that's fine, here we only
+      // read and log (plus fail on errors).
+      GstMessage *msg = gst_bus_timed_pop_filtered(
+          _bus, 0,
+          (GstMessageType)(GST_MESSAGE_ERROR | GST_MESSAGE_WARNING | GST_MESSAGE_ELEMENT
+                           | GST_MESSAGE_STATE_CHANGED | GST_MESSAGE_ASYNC_DONE
+                           | GST_MESSAGE_STREAM_START | GST_MESSAGE_EOS
+                           | GST_MESSAGE_BUFFERING));
+
+      if (msg != NULL)
+      {
+        switch (GST_MESSAGE_TYPE(msg))
+        {
+          // Hard pipeline error → fail immediately.
+          case GST_MESSAGE_ERROR:
+          {
+            GError *err = nullptr;
+            gchar *debug_info = nullptr;
+            gst_message_parse_error(msg, &err, &debug_info);
+            _loadError = QString("Erreur pipeline : %1").arg(err ? err->message : "inconnue");
+            if (debug_info && *debug_info)
+              _loadError += QString("\nDétails : %1").arg(debug_info);
+            qWarning() << "Pipeline error during loading:" << (err ? err->message : "?") << Qt::endl;
+            if (debug_info) qWarning() << "  debug:" << debug_info << Qt::endl;
+            mmDirectLog(QString("[waitForNextBits] GST_MESSAGE_ERROR: %1 | debug=%2")
+                          .arg(err ? err->message : "?")
+                          .arg(debug_info ? debug_info : "none"));
+            g_clear_error(&err);
+            g_free(debug_info);
+            gst_message_unref(msg);
+            return false;
+          }
+
+          // Warning → log but keep waiting (don't fail).
+          case GST_MESSAGE_WARNING:
+          {
+            GError *warn = nullptr;
+            gchar *debug_info = nullptr;
+            gst_message_parse_warning(msg, &warn, &debug_info);
+            qWarning() << "Pipeline warning during loading:" << (warn ? warn->message : "?") << Qt::endl;
+            if (debug_info && *debug_info) qWarning() << "  debug:" << debug_info << Qt::endl;
+            mmDirectLog(QString("[waitForNextBits] GST_MESSAGE_WARNING: %1 | debug=%2")
+                          .arg(warn ? warn->message : "?")
+                          .arg(debug_info ? debug_info : "none"));
+            g_clear_error(&warn);
+            g_free(debug_info);
+            break;
+          }
+
+          // State change on the pipeline — log the transition.
+          case GST_MESSAGE_STATE_CHANGED:
+          {
+            GstState oldS, newS, pendS;
+            gst_message_parse_state_changed(msg, &oldS, &newS, &pendS);
+            mmDirectLog(QString("[waitForNextBits] STATE_CHANGED src=%1 %2 -> %3 (pending %4)")
+                          .arg(GST_MESSAGE_SRC(msg) ? GST_OBJECT_NAME(GST_MESSAGE_SRC(msg)) : "?")
+                          .arg(gst_element_state_get_name(oldS))
+                          .arg(gst_element_state_get_name(newS))
+                          .arg(gst_element_state_get_name(pendS)));
+            break;
+          }
+
+          case GST_MESSAGE_ASYNC_DONE:
+            mmDirectLog("[waitForNextBits] ASYNC_DONE (pipeline prerolled)");
+            break;
+
+          case GST_MESSAGE_STREAM_START:
+            mmDirectLog("[waitForNextBits] STREAM_START");
+            break;
+
+          case GST_MESSAGE_EOS:
+            mmDirectLog("[waitForNextBits] EOS");
+            break;
+
+          case GST_MESSAGE_BUFFERING:
+          {
+            gint percent = 0;
+            gst_message_parse_buffering(msg, &percent);
+            mmDirectLog(QString("[waitForNextBits] BUFFERING %1%").arg(percent));
+            break;
+          }
+
+          // Element message → check for missing-plugin, fail immediately if found.
+          case GST_MESSAGE_ELEMENT:
+          {
+            const GstStructure *s = gst_message_get_structure(msg);
+            if (s)
+            {
+              gchar *structStr = gst_structure_to_string(s);
+              qWarning() << "Pipeline element message during loading:" << structStr << Qt::endl;
+              mmDirectLog(QString("[waitForNextBits] GST_MESSAGE_ELEMENT: %1").arg(structStr));
+              g_free(structStr);
+
+              if (gst_structure_has_name(s, "missing-plugin"))
+              {
+                gchar *desc = gst_missing_plugin_message_get_description(msg);
+                _loadError = QString("Codec manquant : %1\n"
+                                     "Conseil : installez gst-libav pour le support H.264/H.265.")
+                                     .arg(desc ? desc : "inconnu");
+                qWarning() << "Missing plugin:" << (desc ? desc : "?") << Qt::endl;
+                mmDirectLog(QString("[waitForNextBits] MISSING-PLUGIN: %1").arg(desc ? desc : "?"));
+                g_free(desc);
+                gst_message_unref(msg);
+                return false;
+              }
+            }
+            break;
+          }
+
+          default:
+            break;
+        }
+        gst_message_unref(msg);
+      }
+    }
+
+    // First frame received.
     if (hasBits() && bitsHaveChanged())
     {
       if (bits)
         *bits = getBits();
       return true;
     }
+
     // Yield CPU to allow GStreamer callbacks to deliver frames.
-    // NOTE: Do NOT call QCoreApplication::processEvents() here!
-    // It would cause re-entrant repainting during project loading,
-    // crashing on partially-initialized mappings.
+    // NOTE: Do NOT call QCoreApplication::processEvents() here — it causes
+    // re-entrant repainting during project loading (crash on partial mappings).
     QThread::msleep(10);
   }
 
-  // Timed out.
+  // Timed out — give a specific message based on pipeline state.
+  qInfo() << "[waitForNextBits] TIMEOUT after" << timeout << "ms"
+          << "connected=" << videoIsConnected()
+          << "hasBits=" << hasBits()
+          << "bitsChanged=" << bitsHaveChanged();
+  mmDirectLog(QString("[waitForNextBits] TIMEOUT after %1ms connected=%2 hasBits=%3 bitsChanged=%4 data=%5")
+                .arg(timeout)
+                .arg(videoIsConnected())
+                .arg(hasBits())
+                .arg(bitsHaveChanged())
+                .arg((quintptr)_data, 0, 16));
+
+  if (_loadError.isEmpty())
+  {
+    if (!videoIsConnected())
+      _loadError = "Aucun décodeur vidéo disponible pour ce fichier.\n"
+                   "Le codec ou le profil vidéo n'est pas supporté par GStreamer.\n"
+                   "Conseil : installez gst-libav pour le support H.264/H.265.";
+    else
+      _loadError = "Aucune image reçue (délai dépassé). "
+                   "Le codec ou le profil vidéo n'est peut-être pas supporté.";
+  }
+
   return false;
 }
 
