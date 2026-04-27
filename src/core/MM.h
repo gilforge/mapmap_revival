@@ -120,7 +120,15 @@ public:
   static const qreal VERTEX_SELECT_STROKE_WIDTH;
 
   // Time.
+  // DEFAULT_FRAMES_PER_SECOND is the cadence of the rendering timer that
+  // repaints the canvases (and the output window on the projector). It must
+  // match — or be a clean multiple of — the refresh rate of the projector
+  // to avoid judder. 60 Hz works for nearly all HDMI projectors.
   static const qreal DEFAULT_FRAMES_PER_SECOND;
+  // IMAGE_ANIMATION_FPS is the reference cadence for stepping through animated
+  // image sequences (Image::update). Kept at 29.97 for backwards compatibility
+  // with existing projects and recordings.
+  static const qreal IMAGE_ANIMATION_FPS;
 
   // Zoom.
   static const qreal ZOOM_FACTOR;

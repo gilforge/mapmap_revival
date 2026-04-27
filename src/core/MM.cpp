@@ -62,6 +62,10 @@ const qreal MM::VERTEX_SELECT_STROKE_WIDTH = 2.0;
 
 // Time.
 const qreal MM::DEFAULT_FRAMES_PER_SECOND = 29.97f;
+// Animation cadence for animated still-image sequences (kept identical to
+// DEFAULT_FRAMES_PER_SECOND for now — separate constant so we can tune the
+// render rate without changing the visual speed of animated images).
+const qreal MM::IMAGE_ANIMATION_FPS = 29.97f;
 
 // Zoom.
 const qreal MM::ZOOM_FACTOR = 1.4f;

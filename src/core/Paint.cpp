@@ -127,7 +127,7 @@ void Image::update()
     qreal diffTime = currentTime - _prevTime;
 
     // Update next frame.
-    _currentFrameReal += diffTime * _rate * MM::DEFAULT_FRAMES_PER_SECOND;
+    _currentFrameReal += diffTime * _rate * MM::IMAGE_ANIMATION_FPS;
     _currentFrameReal = wrapAround(_currentFrameReal, (qreal)_images.size());
     uint nextFrame = (int)_currentFrameReal;
 

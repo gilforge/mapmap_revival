@@ -336,6 +336,16 @@ public:
 
   static MainWindow* window();
 
+private:
+  // Set as the very first instruction of the constructor so that any
+  // signal/slot invocation triggered DURING construction (e.g.
+  // outputFullScreenAction->setChecked(true) in readSettings() →
+  // outputWindow->setFullScreen → paint events → MainWindow::window())
+  // gets the partially-constructed pointer instead of recursively creating
+  // a second MainWindow. Fixes the "flickering on second launch" bug.
+  static MainWindow* s_instance;
+public:
+
   // Returns a short version of filename.
   static QString strippedName(const QString &fullFileName);
 

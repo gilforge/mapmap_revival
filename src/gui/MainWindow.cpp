@@ -31,8 +31,16 @@
 
 namespace mmp {
 
+// Static instance pointer — assigned as the first instruction of the ctor
+// so that re-entrant MainWindow::window() calls return the in-construction
+// pointer rather than triggering an infinite recreation loop. See header.
+MainWindow* MainWindow::s_instance = nullptr;
+
 MainWindow::MainWindow()
 {
+  // CRITICAL: register self as the singleton BEFORE doing any work that
+  // could indirectly invoke MainWindow::window() via signals/slots/events.
+  s_instance = this;
   // Create model.
 #if QT_VERSION >= 0x050500
   QMessageLogger(__FILE__, __LINE__, nullptr).info() << "Video support: " <<
@@ -109,6 +117,9 @@ MainWindow::MainWindow()
 
 MainWindow::~MainWindow()
 {
+  // Clear singleton pointer so any post-shutdown re-entrant access fails
+  // visibly rather than dereferencing a destroyed object.
+  if (s_instance == this) s_instance = nullptr;
   delete mappingManager;
   //  delete _facade;
 #ifdef HAVE_OSC
@@ -2469,6 +2480,12 @@ void MainWindow::createPaintContextMenu()
 void MainWindow::createToolBars()
 {
   mainToolBar = addToolBar(tr("&Toolbar"));
+  // IMPORTANT: objectName is required by QMainWindow::saveState()/restoreState().
+  // Without it, restoreState() silently fails on subsequent launches, which
+  // can leave the window in a partially-constructed state (flickering show/hide)
+  // until the MapMap.ini is manually deleted. See crash_log.txt warning:
+  //   "QMainWindow::saveState(): 'objectName' not set for QToolBar '&Toolbar'"
+  mainToolBar->setObjectName("mainToolBar");
   mainToolBar->setMovable(false);
   mainToolBar->addAction(importMediaAction);
   mainToolBar->addAction(AddCameraAction);
@@ -2552,7 +2569,40 @@ void MainWindow::readSettings()
   QSettings settings;
 
   // settings present since 0.1.0:
-  restoreGeometry(settings.value("geometry").toByteArray());
+  // Geometry sanity: restore, then verify the window is on an available screen.
+  // If the saved geometry references a disconnected monitor (common when moving
+  // the portable folder between machines), restoreGeometry() leaves the window
+  // off-screen — it appears to open and instantly disappear, making the app
+  // seem to "flicker" on startup. Fall back to a safe default in that case.
+  const QByteArray savedGeom = settings.value("geometry").toByteArray();
+  bool geomOk = false;
+  if (!savedGeom.isEmpty() && restoreGeometry(savedGeom)) {
+    // Verify the window center lies on at least one available screen.
+    const QRect frame = frameGeometry();
+    const QPoint center = frame.center();
+    const QList<QScreen*> screens = QApplication::screens();
+    for (QScreen* s : screens) {
+      if (s && s->availableGeometry().contains(center)) {
+        geomOk = true;
+        break;
+      }
+    }
+  }
+  if (!geomOk) {
+    // Safe default: 1200x800 centered on the primary screen.
+    QScreen* primary = QApplication::primaryScreen();
+    if (primary) {
+      const QRect avail = primary->availableGeometry();
+      const int w = qMin(1200, avail.width()  - 40);
+      const int h = qMin(800,  avail.height() - 80);
+      setGeometry(avail.x() + (avail.width()  - w) / 2,
+                  avail.y() + (avail.height() - h) / 2,
+                  w, h);
+    } else {
+      resize(1200, 800);
+    }
+    qWarning() << "readSettings: saved geometry invalid or off-screen — reset to default";
+  }
   restoreState(settings.value("windowState").toByteArray());
 
   mainSplitter->restoreState(settings.value("mainSplitter").toByteArray());
@@ -3382,11 +3432,14 @@ QString MainWindow::locateMediaFile(const QString &uri, bool isImage)
 }
 
 MainWindow* MainWindow::window() {
-  static MainWindow* instance = nullptr;
-  if (!instance) {
-    instance = new MainWindow;
+  if (!s_instance) {
+    // The constructor itself sets s_instance = this as its first instruction,
+    // so re-entrant calls during construction find the pointer and don't
+    // recreate. We don't assign here on purpose — by the time `new MainWindow`
+    // returns, s_instance has already been set.
+    new MainWindow();
   }
-  return instance;
+  return s_instance;
 }
 
 void MainWindow::updateCanvases()

@@ -59,6 +59,17 @@ MainApplication::MainApplication(int &argc, char *argv[])
   // --- File logger (debug) -------------------------------------------------
   // On Windows, qDebug() in GUI apps goes to OutputDebugString (not stdout).
   // This handler writes everything to mapmap_debug.log next to the exe.
+  // Rotate: keep the previous run's log as mapmap_debug.log.prev so that if
+  // the next run crashes early (before the log can be inspected live), the
+  // diagnostics from the crashed session are still available.
+  {
+    const QString logPath  = QCoreApplication::applicationDirPath() + "/mapmap_debug.log";
+    const QString prevPath = QCoreApplication::applicationDirPath() + "/mapmap_debug.log.prev";
+    if (QFile::exists(logPath)) {
+      QFile::remove(prevPath);      // discard the run-before-last
+      QFile::rename(logPath, prevPath);
+    }
+  }
   s_logFile = new QFile(QCoreApplication::applicationDirPath() + "/mapmap_debug.log");
   if (s_logFile->open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
     // Write a known sentinel so we can verify the file is reachable.

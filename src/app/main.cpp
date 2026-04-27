@@ -6,6 +6,7 @@
 #include <QCommandLineParser>
 #include <QCommandLineOption>
 #include <QOpenGLContext>
+#include <QFile>
 
 #include "MM.h"
 #include "MainWindow.h"
@@ -85,10 +86,31 @@ int main(int argc, char *argv[])
   // Initialize meta-object registry.
   initRegistry();
 
+  // CRITICAL: share OpenGL resources (textures, buffers) across ALL
+  // QOpenGLWidget contexts in the application — including those in
+  // separate top-level windows like OutputGLWindow. Without this, Qt
+  // only shares contexts within the same top-level window, so the
+  // textureId allocated for a video paint in MainWindow's source/
+  // destination canvases is invalid in the output window's context.
+  // Result: the HDMI output binds an undefined texture and never
+  // receives glTexImage2D updates (because bitsHaveChanged() is reset
+  // by the first canvas to render), producing the "sometimes fluid,
+  // sometimes stuttering" symptom on the projector.
+  // MUST be set BEFORE QApplication is constructed.
+  QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+
   MainApplication app(argc, argv);
 
-  // Open crash log file (flushed on every write for crash debugging)
-  QString logPath = QCoreApplication::applicationDirPath() + "/crash_log.txt";
+  // Open crash log file (flushed on every write for crash debugging).
+  // Rotate to crash_log.txt.prev first so that, if the next run crashes early
+  // (e.g. flickering on second launch), the diagnostics from the broken run
+  // are still available for inspection.
+  QString logPath     = QCoreApplication::applicationDirPath() + "/crash_log.txt";
+  QString prevLogPath = QCoreApplication::applicationDirPath() + "/crash_log.txt.prev";
+  if (QFile::exists(logPath)) {
+    QFile::remove(prevLogPath);
+    QFile::rename(logPath, prevLogPath);
+  }
   g_logFile = fopen(logPath.toUtf8().constData(), "w");
 
   // Install message handler
