@@ -106,7 +106,6 @@ This Windows revival fork was created for educational purposes using AI-assisted
 
 More info
 ---------
-* Original project: http://mapmap.info
 * Original repository: https://github.com/mapmapteam/mapmap
 
 
